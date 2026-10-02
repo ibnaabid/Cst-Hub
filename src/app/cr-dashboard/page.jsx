@@ -350,7 +350,7 @@ export default function CRDashboardPage() {
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => router.push('/publish-note')}
+              onClick={() => router.push('/cr-dashboard/notes')}
               className="p-4 rounded-xl bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-between group transition-all"
             >
 
@@ -383,7 +383,7 @@ export default function CRDashboardPage() {
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => router.push('/publish-notice')}
+              onClick={() => router.push('/cr-dashboard/notices')}
               className="p-4 rounded-xl bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 flex items-center justify-between group transition-all"
             >
 
