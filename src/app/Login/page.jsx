@@ -22,92 +22,140 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
+  e.preventDefault();
+  setIsLoading(true);
 
-    try {
-      // ========== CR Accounts (শুধু Email + Password) ==========
-      const CR_ACCOUNTS = [
-        {
-          name: "Tasfik",
-          email: "tasfik@csthub.com",
-          password: "tasfik123",
-          role: "cr",
-          group: "Group B"
-        },
-        {
-          name: "Ratul",
-          email: "ratul@csthub.com",
-          password: "ratul123",
-          role: "cr",
-          group: "Group A"
-        }
-      ];
+  try {
 
-      // শুধু Email + Password দিয়ে CR চেক
-      const isCR = CR_ACCOUNTS.find(
-        (cr) =>
-          cr.email.toLowerCase() === formData.email.trim().toLowerCase() &&
-          cr.password === formData.password
-      );
+    // ==========================================
+    // CR LOGIN
+    // ==========================================
 
-      if (isCR) {
-        toast.success(`Welcome CR ${isCR.name}!`);
-        
-        if (formData.rememberMe) {
-          localStorage.setItem('currentUser', JSON.stringify(isCR));
-        } else {
-          sessionStorage.setItem('currentUser', JSON.stringify(isCR));
-        }
+    const CR_ACCOUNTS = [
+      {
+        name: "Tasfik",
+        email: "tasfik@csthub.com",
+        password: "tasfik123",
+        role: "cr",
+        group: "Group B",
+      },
+      {
+        name: "Ratul",
+        email: "ratul@csthub.com",
+        password: "ratul123",
+        role: "cr",
+        group: "Group A",
+      },
+    ];
 
-        setTimeout(() => {
-          router.push('/cr-dashboard');
-        }, 600);
-        return;
-      }
+    const isCR = CR_ACCOUNTS.find(
+      (cr) =>
+        cr.email.toLowerCase() ===
+          formData.email.trim().toLowerCase() &&
+        cr.password === formData.password
+    );
 
-      // ========== Normal Student Login ==========
-      const savedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    if (isCR) {
 
-      if (savedUsers.length === 0) {
-        toast.error('No account found! Please sign up first.');
-        return;
-      }
-
-      const matchedUser = savedUsers.find(
-        (user) =>
-          user.name.toLowerCase() === formData.name.trim().toLowerCase() &&
-          (
-            user.email.toLowerCase() === formData.email.trim().toLowerCase() ||
-            user.roll === formData.email.trim()
-          ) &&
-          user.password === formData.password
-      );
-
-      if (!matchedUser) {
-        toast.error('Invalid Name, Email/Roll, or Password!');
-        return;
-      }
-
-      toast.success(`Welcome back, ${matchedUser.name}!`);
+      toast.success(`Welcome CR ${isCR.name}!`);
 
       if (formData.rememberMe) {
-        localStorage.setItem('currentUser', JSON.stringify(matchedUser));
+        localStorage.setItem(
+          "currentUser",
+          JSON.stringify(isCR)
+        );
       } else {
-        sessionStorage.setItem('currentUser', JSON.stringify(matchedUser));
+        sessionStorage.setItem(
+          "currentUser",
+          JSON.stringify(isCR)
+        );
       }
 
       setTimeout(() => {
-        router.push('/Student-dashboard');
+        router.push("/cr-dashboard");
       }, 600);
 
-    } catch (error) {
-      toast.error('Something went wrong!');
-      console.error(error);
-    } finally {
-      setIsLoading(false);
+      return;
     }
-  };
+
+
+    // ==========================================
+    // STUDENT LOGIN FROM MONGODB
+    // ==========================================
+
+    const response = await fetch(
+      "http://localhost:8000/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          emailOrRoll: formData.email.trim(),
+          password: formData.password,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      toast.error(
+        data.message || "Invalid login information!"
+      );
+
+      return;
+    }
+
+
+    // ==========================================
+    // LOGIN SUCCESS
+    // ==========================================
+
+    const loggedInUser = data.user;
+
+    toast.success(
+      `Welcome back, ${loggedInUser.name}!`
+    );
+
+
+    if (formData.rememberMe) {
+
+      localStorage.setItem(
+        "currentUser",
+        JSON.stringify(loggedInUser)
+      );
+
+    } else {
+
+      sessionStorage.setItem(
+        "currentUser",
+        JSON.stringify(loggedInUser)
+      );
+
+    }
+
+
+    setTimeout(() => {
+      router.push("/Student-dashboard");
+    }, 600);
+
+
+  } catch (error) {
+
+    console.error("Login error:", error);
+
+    toast.error(
+      "Server connection failed!"
+    );
+
+  } finally {
+
+    setIsLoading(false);
+
+  }
+};
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">

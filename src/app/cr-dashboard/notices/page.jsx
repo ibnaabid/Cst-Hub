@@ -1,210 +1,239 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { Bell, Upload, FileText, X, CheckCircle2, Loader2 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  HiOutlineArrowLeft,
+  HiOutlineSpeakerphone,
+  HiOutlinePlusCircle,
+} from "react-icons/hi";
 
-export default function PublishNoticePage() {
+const API_URL = "http://localhost:8000";
+
+export default function AddNoticePage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [formData, setFormData] = useState({
-    title: '',
-    category: 'General', // General, Exam, Routine, Emergency
-    group: 'All',        // All, Group A, Group B
-    description: '',
+    title: "",
+    description: "",
+    category: "urgent",
+    publisher: "CR Office",
   });
 
-  useEffect(() => {
-    const user = JSON.parse(
-      localStorage.getItem('currentUser') || 
-      sessionStorage.getItem('currentUser') || 
-      'null'
-    );
-    if (!user || user.role !== 'cr') {
-      toast.error('Access denied! CR only.');
-      router.push('/login');
-      return;
-    }
-    setCurrentUser(user);
-  }, [router]);
+  const handleChange = (e) => {
+    const { name, value } = e.target;
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 15 * 1024 * 1024) {
-        toast.error('File size must be less than 15MB');
-        return;
-      }
-      setSelectedFile(file);
-    }
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    setIsLoading(true);
-    try {
-      const postData = {
-        title: formData.title,
-        category: formData.category,
-        group: formData.group,
-        description: formData.description,
-        publishedBy: currentUser?.name || 'CR',
-        publishedByEmail: currentUser?.email || '',
-        createdAt: new Date(),
-      };
+    setError("");
+    setSuccess("");
 
-      const res = await fetch('http://localhost:8000/notices', {
-        method: 'POST',
+    if (!formData.title.trim()) {
+      setError("Notice title দাও!");
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      setError("Notice description দাও!");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_URL}/notices`, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json', // যেহেতু ফাইল নেই, তাই JSON হেডার দিতে হবে
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(postData),
+        body: JSON.stringify({
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          category: formData.category,
+          publisher: formData.publisher.trim() || "CR Office",
+          createdAt: new Date().toISOString(),
+        }),
       });
 
       const result = await res.json();
 
-      if (result.success) {
-        toast.success('Notice published successfully!');
-        setFormData({ title: '', category: 'General', group: 'All', description: '' });
-      } else {
-        toast.error(result.message || 'Failed to publish notice');
+      console.log("Backend response:", result);
+
+      if (!res.ok || !result.success) {
+        throw new Error(
+          result.message || "Failed to publish notice. Please try again."
+        );
       }
-    } catch (error) {
-      console.error(error);
-      toast.error('Server error. Is backend running?');
+
+      setSuccess("✅ Notice published successfully!");
+
+      setFormData({
+        title: "",
+        description: "",
+        category: "urgent",
+        publisher: "CR Office",
+      });
+
+      setTimeout(() => {
+        router.push("/cr-dashboard");
+      }, 1000);
+    } catch (err) {
+      console.error("Publish notice error:", err);
+
+      setError(err.message || "Something went wrong!");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="p-6 lg:p-10 max-w-3xl mx-auto">
-      
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-semibold">
-            Notice Board Management
-          </span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2.5">
-          <Bell className="w-7 h-7 text-violet-400" />
-          <span>Publish New Notice 📢</span>
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Broadcast important updates, routines, and exam notices to students.
-        </p>
-      </motion.div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 p-4 md:p-8">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Back Button */}
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition-all text-sm font-medium"
+        >
+          <HiOutlineArrowLeft className="text-lg" />
+          Back
+        </button>
 
-      {/* Form Card */}
-      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* Notice Title */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Notice Title *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Mid-term Exam Routine 2026"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-all"
-            />
-          </div>
+        {/* Form Container */}
+        <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 md:p-10 shadow-2xl">
+          {/* Header */}
+          <div className="flex items-center gap-3 border-b border-slate-800 pb-5 mb-6">
+            <span className="p-3 rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <HiOutlineSpeakerphone className="text-2xl" />
+            </span>
 
-          {/* Category + Group */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">Category *</label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-violet-500 transition-all cursor-pointer"
-              >
-                <option value="General">General Notice</option>
-                <option value="Exam">Exam Update</option>
-                <option value="Routine">Class Routine</option>
-                <option value="Emergency">Emergency</option>
-              </select>
-            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">
+                Create Official Notice
+              </h1>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">Target Group *</label>
-              <select
-                value={formData.group}
-                onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-violet-500 transition-all cursor-pointer"
-              >
-                <option value="All">All Students</option>
-                <option value="Group A">Group A Only</option>
-                <option value="Group B">Group B Only</option>
-              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                Publish announcements for all students
+              </p>
             </div>
           </div>
 
-          {/* Notice Description / Details */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Notice Description / Details *</label>
-            <textarea
-              rows={4}
-              required
-              placeholder="Write full details of the notice here..."
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-all resize-none"
-            />
-          </div>
+          {/* Error */}
+          {error && (
+            <div className="mb-5 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 text-sm">
+              {error}
+            </div>
+          )}
 
-          {/* Optional Attachment File (PDF or Image) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Attachment File (Optional PDF/Image)</label>
-            
-            {!selectedFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-700 hover:border-violet-500/50 rounded-xl cursor-pointer bg-slate-950/50 transition-all group">
-                <Upload className="w-6 h-6 text-slate-500 group-hover:text-violet-400 mb-1 transition-colors" />
-                <p className="text-xs text-slate-400">Click to attach notice file (PDF / Image)</p>
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange} className="hidden" />
+          {/* Success */}
+          {success && (
+            <div className="mb-5 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 text-sm">
+              {success}
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Notice Title */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                Notice Title
               </label>
-            ) : (
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <FileText className="w-5 h-5 text-violet-400 shrink-0" />
-                <span className="text-xs font-medium text-white truncate flex-1">{selectedFile.name}</span>
-                <button type="button" onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-rose-400">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
 
-          {/* Submit Button */}
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            type="submit"
-            disabled={isLoading}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-violet-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Publishing Notice...
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                Publish Notice
-              </>
-            )}
-          </motion.button>
-        </form>
-      </motion.div>
+              <input
+                type="text"
+                name="title"
+                required
+                value={formData.title}
+                onChange={handleChange}
+                placeholder="e.g. Semester Final Exam Routine Published"
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+              />
+            </div>
+
+            {/* Category + Publisher */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Category */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                  Category
+                </label>
+
+                <select
+                  name="category"
+                  value={formData.category}
+                  onChange={handleChange}
+                  className="w-full bg-slate-950/60 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-rose-500 transition-all"
+                >
+                  <option value="urgent">Urgent</option>
+                  <option value="academic">Academic</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+
+              {/* Publisher */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                  Publisher
+                </label>
+
+                <input
+                  type="text"
+                  name="publisher"
+                  value={formData.publisher}
+                  onChange={handleChange}
+                  placeholder="CR Office"
+                  className="w-full bg-slate-950/60 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                Notice Description
+              </label>
+
+              <textarea
+                name="description"
+                rows="6"
+                required
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Write full details of the notice..."
+                className="w-full bg-slate-950/60 border border-slate-800 rounded-2xl p-4 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 transition-all resize-none"
+              />
+            </div>
+
+            {/* Publish Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-purple-600 hover:from-rose-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium shadow-lg shadow-rose-500/25 transition-all text-sm flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                "Publishing..."
+              ) : (
+                <>
+                  <HiOutlinePlusCircle className="text-lg" />
+                  Publish Notice
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

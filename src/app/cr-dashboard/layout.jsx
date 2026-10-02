@@ -6,7 +6,9 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, Bell, Users, LogOut,
-  LayoutDashboard, BookOpen, Calendar, Home, Menu, X
+  LayoutDashboard, BookOpen, Calendar, Home, Menu, X,
+  BookBookmark,
+  BookLockIcon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,7 +27,7 @@ export default function CRLayout({ children }) {
 
     if (!user || user.role !== 'cr') {
       toast.error('Access denied! CR only.');
-      router.push('/login');
+      router.push('/Login');
       return;
     }
     setCurrentUser(user);
@@ -35,17 +37,18 @@ export default function CRLayout({ children }) {
     localStorage.removeItem('currentUser');
     sessionStorage.removeItem('currentUser');
     toast.success('Logged out successfully');
-    router.push('/login');
+    router.push('/Login');
   };
 
   const sidebarLinks = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, href: '/cr-dashboard' },
-    { id: 'notes', label: 'Notes', icon: BookOpen, href: '/cr-dashboard/notes' },
-    { id: 'notices', label: 'Notices', icon: Bell, href: '/cr-dashboard/notices' },
-    // { id: 'routine', label: 'Routine', icon: Calendar, href: '/cr-dashboard/routine' },
+    { id: 'Add notes', label: 'Notes', icon: BookOpen, href: '/cr-dashboard/notes' },
+      { id: 'All Notes', label: 'All-Notes', icon: BookBookmark, href: '/cr-dashboard/Allnotes' },
+    { id: 'Add notices', label: 'Notices', icon: Bell, href: '/cr-dashboard/notices' },
+    { id: 'All Notices', label: 'All-Notices', icon:BookLockIcon , href: '/cr-dashboard/Allnotices' },
     { id: 'students', label: 'Students', icon: Users, href: '/cr-dashboard/students' },
   ];
-
+// icon: 
   const isActive = (href) => {
     if (href === '/cr-dashboard') return pathname === '/cr-dashboard';
     return pathname.startsWith(href);
