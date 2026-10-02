@@ -264,11 +264,11 @@ export default function LandingPage({ onNavigate }) {
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
           >
-           <Link href="/register">
+           <Link href="/Signup">
             <motion.button 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => onNavigate('register')}
+              onClick={() => onNavigate('Signup')}
               className="px-8 py-4 rounded-xl bg-white text-indigo-900 hover:bg-slate-100 font-bold text-sm shadow-2xl transition-all"
             >
               Join CST HUB

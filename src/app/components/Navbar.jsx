@@ -1,195 +1,235 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Menu, X, GraduationCap, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+import { GraduationCap, User, LogOut, Menu, X, ChevronDown } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function Navbar() {
+  const router = useRouter();
+  const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  const navLinks = [
-    { name: 'Home', href: '/' },
-    { name: 'Features', href: '/features' },
-    { name: 'About', href: '/About' },
-  ];
+  useEffect(() => {
+    const checkUser = () => {
+      const storedUser = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (err) {
+          console.error("Failed to parse user data", err);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+    };
+
+    checkUser();
+
+    window.addEventListener('userLoggedIn', checkUser);
+    window.addEventListener('storage', checkUser);
+
+    return () => {
+      window.removeEventListener('userLoggedIn', checkUser);
+      window.removeEventListener('storage', checkUser);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    sessionStorage.removeItem('currentUser');
+    setUser(null);
+    
+    window.dispatchEvent(new Event('userLoggedIn'));
+
+    toast.success('Logged out successfully!');
+    router.push('/Login');
+  };
+
+  // CR হলে CR Dashboard, নাহলে Student Dashboard
+  const dashboardLink = user?.role === 'cr' ? '/cr-dashboard' : '/Student-dashboard';
 
   return (
-    <motion.header
-      initial={{ y: -50, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="sticky top-0 z-50 bg-slate-900/85 backdrop-blur-xl border-b border-slate-800 text-slate-100 shadow-xl"
-    >
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"
-            >
+          
+          {/* Logo / Brand */}
+          <Link href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 group-hover:scale-105 transition-transform">
               <GraduationCap className="w-5 h-5" />
-            </motion.div>
+            </div>
             <div>
-              <span className="font-bold text-lg text-white tracking-tight">CST HUB</span>
-              <span className="block text-[10px] text-indigo-400 font-semibold -mt-1 tracking-wider uppercase">Academic Hub</span>
+              <span className="font-bold text-base text-white tracking-tight">CST HUB</span>
+              <span className="block text-[9px] text-indigo-400 font-semibold -mt-1 tracking-wider uppercase">Dinajpur Polytechnic</span>
             </div>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-sm font-medium text-slate-300 hover:text-indigo-400 transition-colors relative"
-              >
-                {link.name}
+          {/* Desktop Nav Links */}
+          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+            <Link href="/" className="hover:text-indigo-400 transition-colors">Home</Link>
+            <Link href="/About" className="hover:text-indigo-400 transition-colors">About</Link>
+            <Link href="/routine" className="hover:text-indigo-400 transition-colors">Routine</Link>
+            
+            {/* Dashboard Link - Role অনুযায়ী */}
+            {user && (
+              <Link href={dashboardLink} className="hover:text-indigo-400 transition-colors">
+                {user.role === 'cr' ? 'CR Panel' : 'Dashboard'}
               </Link>
-            ))}
-          </nav>
+            )}
+          </div>
 
-          {/* Desktop Right Actions */}
+          {/* Right Side: User Profile or Login/Register */}
           <div className="hidden md:flex items-center gap-4">
+            {user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2.5 py-1.5 px-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all text-slate-200"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/30">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-xs font-semibold max-w-[120px] truncate block">{user.name}</span>
+                    {user.role === 'cr' && (
+                      <span className="text-[9px] text-indigo-400 font-medium">CR</span>
+                    )}
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                </button>
 
-            {/* Login Button */}
-            <Link href="/Login">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="text-sm font-semibold text-slate-300 hover:text-indigo-400 transition-colors px-3 py-2 cursor-pointer"
-              >
-                Login
-              </motion.div>
-            </Link>
-
-            {/* Register Button */}
-            <Link href="/Signup">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 cursor-pointer inline-block"
-              >
-                Sign Up
-              </motion.div>
-            </Link>
-
-            {/* User Dropdown Menu */}
-            <div className="relative">
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors bg-slate-800/60 border border-slate-700/60 py-1.5 px-3 rounded-full"
-              >
-                <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white">
-                  A
-                </div>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              <AnimatePresence>
+                {/* Dropdown Menu */}
                 {dropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ duration: 0.2 }}
-                    className="absolute right-0 mt-3 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl py-2 overflow-hidden z-50"
-                  >
+                  <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden py-1 z-50">
+                    <div className="px-4 py-2 border-b border-slate-800">
+                      <p className="text-[10px] text-slate-400">Signed in as</p>
+                      <p className="text-xs font-bold text-white truncate">{user.name}</p>
+                      {user.role === 'cr' && (
+                        <p className="text-[10px] text-indigo-400 font-medium mt-0.5">Class Representative</p>
+                      )}
+                    </div>
+                    
                     <Link
-                      href="/dashboard"
+                      href={dashboardLink}
                       onClick={() => setDropdownOpen(false)}
-                      className="block px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-indigo-600/20 hover:text-indigo-400 transition-colors"
+                      className="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition-colors"
                     >
-                      Dashboard
+                      {user.role === 'cr' ? 'CR Dashboard' : 'Dashboard'}
                     </Link>
-                    <Link
-                      href="/profile"
-                      onClick={() => setDropdownOpen(false)}
-                      className="block px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-indigo-600/20 hover:text-indigo-400 transition-colors"
+                    
+                    <button
+                      onClick={() => {
+                        setDropdownOpen(false);
+                        handleLogout();
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs text-rose-400 hover:bg-slate-800 transition-colors flex items-center gap-2"
                     >
-                      Profile Settings
-                    </Link>
-                  </motion.div>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
                 )}
-              </AnimatePresence>
-            </div>
-
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/Login"
+                  className="text-xs font-semibold px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 transition-all border border-slate-800"
+                >
+                  Log In
+                </Link>
+                <Link
+                  href="/Signup"
+                  className="text-xs font-semibold px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          <div className="md:hidden flex items-center">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-xl bg-slate-900 text-slate-300 border border-slate-800"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="md:hidden bg-slate-900/95 backdrop-blur-2xl border-b border-slate-800 px-4 pt-3 pb-5 shadow-2xl overflow-hidden"
-          >
-            {/* Mobile Navigation */}
-            <div className="flex flex-col gap-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block w-full py-3 text-sm font-medium text-slate-300 hover:text-indigo-400 hover:bg-slate-800/50 rounded-lg px-3 transition-colors"
+      {/* Mobile Menu Dropdown */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 pt-3 pb-5 space-y-3">
+          <div className="flex flex-col space-y-2 text-sm text-slate-300">
+            <Link href="/" onClick={() => setMobileMenuOpen(false)} className="py-1 hover:text-indigo-400">Home</Link>
+            
+            {user && (
+              <Link 
+                href={dashboardLink} 
+                onClick={() => setMobileMenuOpen(false)} 
+                className="py-1 hover:text-indigo-400"
+              >
+                {user.role === 'cr' ? 'CR Panel' : 'Dashboard'}
+              </Link>
+            )}
+            
+            <Link href="/routine" onClick={() => setMobileMenuOpen(false)} className="py-1 hover:text-indigo-400">Routine</Link>
+            <Link href="/notes" onClick={() => setMobileMenuOpen(false)} className="py-1 hover:text-indigo-400">Notes</Link>
+          </div>
+          
+          <div className="pt-3 border-t border-slate-800">
+            {user ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/30">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">{user.name}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {user.role === 'cr' ? `${user.group} · CR` : (user.email || user.roll)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-center gap-2"
                 >
-                  {link.name}
+                  <LogOut className="w-4 h-4" />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <Link
+                  href="/Login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-center py-2.5 rounded-xl text-xs font-semibold border border-slate-800 text-slate-300 bg-slate-950"
+                >
+                  Log In
                 </Link>
-              ))}
-            </div>
-
-            {/* Mobile Auth Links */}
-            <div className="pt-4 mt-3 border-t border-slate-800 flex flex-col gap-2">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full py-2.5 text-center text-sm font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 transition-colors"
-              >
-                Login
-              </Link>
-
-              <Link
-                href="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full py-2.5 text-center text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md transition-colors"
-              >
-                Sign Up
-              </Link>
-            </div>
-
-            {/* Mobile Dashboard Link */}
-            <div className="mt-2">
-              <Link
-                href="/dashboard"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block w-full py-2.5 text-center text-sm font-medium text-indigo-400 hover:bg-indigo-600/10 rounded-xl transition-colors"
-              >
-                Dashboard
-              </Link>
-            </div>
-
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.header>
+                <Link
+                  href="/Signup"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-center py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 text-white"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </nav>
   );
 }
