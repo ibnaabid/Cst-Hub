@@ -244,8 +244,8 @@ export default function NotesPage() {
                       </td>
 
                       {/* Group */}
-                      <td className="px-5 py-4">
-                        <span className="px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs">
+                      <td className="px-3 max-w-full py-5">
+                        <span className="mx-1 rounded-xl bg-purple-500/10  border-purple-800/20 border-2 font-bold text-purple-400 text-xs">
                           {note.group || "All"}
                         </span>
                       </td>

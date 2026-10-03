@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -18,37 +18,55 @@ import {
 
 export default function StudentDashboardLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const pathname = usePathname();
 
-  // আপনার কাঙ্ক্ষিত রাউট অনুযায়ী নেভ আইটেমগুলো আপডেট করা হলো
+  // লোকালস্টোরেজ বা সেশন থেকে ইউজারের নাম লোড করা
+  useEffect(() => {
+    try {
+      const localUser = localStorage.getItem('currentUser');
+      const sessionUser = sessionStorage.getItem('currentUser');
+      const storedUser = localUser || sessionUser;
+      if (storedUser) {
+        setCurrentUser(JSON.parse(storedUser));
+      }
+    } catch (err) {
+      console.error("Failed to load user info:", err);
+    }
+  }, []);
+
   const navItems = [
     { name: 'Dashboard', href: '/Student-dashboard', icon: LayoutDashboard },
     { name: 'Student Directory', href: '/Student-dashboard/students', icon: Users },
     { name: 'Teacher Contact', href: '/Student-dashboard/Teacher-Contact', icon: Phone },
     { name: 'Notices', href: '/Student-dashboard/notices', icon: FileText },
-    { name: 'Notes & PDFs', href: '/Student-dashboard/notes', icon: BookOpen }, // নতুন নোটস/পিডিএফ রুট
+    { name: 'Notes & PDFs', href: '/Student-dashboard/notes', icon: BookOpen },
   ];
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     sessionStorage.removeItem('currentUser');
-    window.location.href = '/login';
+    window.location.href = '/Login';
   };
 
+  // ইউজারের প্রথম অক্ষর দিয়ে প্রোফাইল আইকন তৈরি
+  const userInitial = currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'S';
+  const userName = currentUser?.name ? currentUser.name : 'Student';
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex overflow-x-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex -w-80 overflow-x-hidden">
       
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-4 bg-black/70 backdrop-blur-3xl z-90 lg:hidden"
         />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
+        fixed lg:static inset-y-4 left-0 z-50
         w-64 bg-slate-900 border-r border-slate-800 
         flex flex-col transition-transform duration-300 ease-in-out shrink-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -56,13 +74,15 @@ export default function StudentDashboardLayout({ children }) {
         {/* Brand / Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-600/30">
+            <div className="w-15 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-600/30">
               <GraduationCap className="w-5 h-5" />
             </div>
+           <Link href="/Student-dashboard" className="flex items-center gap-2.5 group">
             <div>
               <h1 className="text-sm font-bold text-white tracking-wide">CST Portal</h1>
               <p className="text-[10px] text-slate-400">Student Dashboard</p>
             </div>
+            </Link>
           </div>
           <button 
             onClick={() => setSidebarOpen(false)}
@@ -120,7 +140,9 @@ export default function StudentDashboardLayout({ children }) {
           </button>
 
           <div className="hidden lg:block">
-            <h2 className="text-sm font-semibold text-slate-200">Welcome back, Student 👋</h2>
+            <h2 className="text-sm font-semibold text-slate-200">
+              Welcome back, {userName} 👋
+            </h2>
           </div>
 
           <div className="flex items-center gap-3">
@@ -129,7 +151,7 @@ export default function StudentDashboardLayout({ children }) {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500" />
             </button>
             <div className="w-8 h-8 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-xs uppercase">
-              S
+              {userInitial}
             </div>
           </div>
         </header>
