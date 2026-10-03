@@ -1,8 +1,10 @@
+// ```jsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+
 import {
   GraduationCap,
   User,
@@ -10,19 +12,25 @@ import {
   Menu,
   X,
   ChevronDown,
+  Home,
+  BookOpen,
+  Info,
+  CalendarDays,
+  Users,
 } from "lucide-react";
+
 import toast from "react-hot-toast";
 
 export default function Navbar() {
   const router = useRouter();
-  const pathname = usePathname(); // ড্যাশবোর্ড পাথ চেক করার জন্য
+  const pathname = usePathname();
 
   const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // ==========================================
-  // LOAD CURRENT USER
+  // LOAD USER
   // ==========================================
 
   useEffect(() => {
@@ -32,28 +40,23 @@ export default function Navbar() {
 
       const storedUser = localUser || sessionUser;
 
-      if (storedUser) {
-        try {
-          setUser(JSON.parse(storedUser));
-        } catch (err) {
-          console.error("Failed to parse user data:", err);
-          setUser(null);
-        }
-      } else {
+      if (!storedUser) {
+        setUser(null);
+        return;
+      }
+
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error("Failed to parse user:", error);
         setUser(null);
       }
     };
 
-    // প্রথমবার check
     checkUser();
 
-    // Login হলে instantly update
     window.addEventListener("userLogin", checkUser);
-
-    // Logout হলে instantly update
     window.addEventListener("userLogout", checkUser);
-
-    // অন্য tab/window থেকে storage change হলে update
     window.addEventListener("storage", checkUser);
 
     return () => {
@@ -71,14 +74,11 @@ export default function Navbar() {
     localStorage.removeItem("currentUser");
     sessionStorage.removeItem("currentUser");
 
-    // Navbar state instantly clear
     setUser(null);
-
-    // অন্য component-কে জানানো
-    window.dispatchEvent(new Event("userLogout"));
-
     setDropdownOpen(false);
     setMobileMenuOpen(false);
+
+    window.dispatchEvent(new Event("userLogout"));
 
     toast.success("Logged out successfully!");
 
@@ -86,23 +86,82 @@ export default function Navbar() {
   };
 
   // ==========================================
-  // DASHBOARD LINK
+  // DASHBOARD
   // ==========================================
 
   const dashboardLink =
-    user?.role === "cr"
-      ? "/cr-dashboard"
-      : "/Student-dashboard";
+    user?.role === "cr" ? "/cr-dashboard" : "/Student-dashboard";
 
-  // ড্যাশবোর্ড পেজে থাকলে এই গ্লোবাল নেভবারটি রেন্ডার হবে না (ড্যাশবোর্ডের নিজস্ব সাইডবার/লেআউট দেখাবে)
-  if (pathname?.includes("Student-dashboard") || pathname?.includes("cr-dashboard")) {
+  // ==========================================
+  // HIDE NAVBAR ON DASHBOARD
+  // ==========================================
+
+  if (
+    pathname?.includes("Student-dashboard") ||
+    pathname?.includes("cr-dashboard")
+  ) {
     return null;
   }
 
+  // ==========================================
+  // NAV LINKS
+  // ==========================================
+
+  const navLinks = [
+    {
+      name: "Home",
+      href: "/",
+      icon: Home,
+    },
+    {
+      name: "Study Room",
+      href: "/study-room",
+      icon: Users,
+    },
+    {
+      name: "About",
+      href: "/About",
+      icon: Info,
+    },
+    {
+      name: "Routine",
+      href: "/routine",
+      icon: CalendarDays,
+    },
+  ];
+
+  // ==========================================
+  // ACTIVE LINK
+  // ==========================================
+
+  const isActive = (href) => {
+    if (href === "/") {
+      return pathname === "/";
+    }
+
+    return pathname?.startsWith(href);
+  };
+
+  // ==========================================
+  // DESKTOP LINK CLASS
+  // ==========================================
+
+  const getNavLinkClass = (href) => {
+    if (isActive(href)) {
+      return "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-white bg-indigo-500/15 border border-indigo-400/40 shadow-[0_0_18px_rgba(99,102,241,0.12)] transition-all duration-300";
+    }
+
+    return "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-300 border border-transparent hover:text-white hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:shadow-[0_0_18px_rgba(99,102,241,0.12)] transition-all duration-300";
+  };
+
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
+    <nav className="fixed top-3 left-3 right-3 z-50 bg-slate-950/75 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.35)]">
+      {/* ==========================================
+          NAVBAR
+      ========================================== */}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-[68px]">
 
           {/* ==========================================
               LOGO
@@ -110,119 +169,123 @@ export default function Navbar() {
 
           <Link
             href="/"
-            className="inline-flex items-center gap-2.5 group"
+            className="inline-flex items-center gap-3 group"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 group-hover:scale-105 transition-transform">
+            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/30 group-hover:scale-105 group-hover:shadow-indigo-500/50 transition-all duration-300">
               <GraduationCap className="w-5 h-5" />
+
+              <span className="absolute inset-0 rounded-xl bg-indigo-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
 
             <div>
-              <span className="font-bold text-base text-white tracking-tight">
+              <span className="block font-bold text-base text-white tracking-tight">
                 CST HUB
               </span>
 
-              <span className="block text-[9px] text-indigo-400 font-semibold -mt-1 tracking-wider uppercase">
+              <span className="block text-[9px] text-indigo-400 font-semibold -mt-1 tracking-[0.18em] uppercase">
                 Dinajpur Polytechnic
               </span>
             </div>
           </Link>
 
           {/* ==========================================
-              DESKTOP NAV LINKS
+              DESKTOP NAV
           ========================================== */}
 
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+          <div className="hidden md:flex items-center gap-1.5">
+            {navLinks.map((link) => {
+              const Icon = link.icon;
 
-            <Link
-              href="/"
-              className="hover:text-indigo-400 transition-colors"
-            >
-              Home
-            </Link>
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={getNavLinkClass(link.href)}
+                >
+                  <Icon className="w-3.5 h-3.5" />
 
-            <Link
-              href="/About"
-              className="hover:text-indigo-400 transition-colors"
-            >
-              About
-            </Link>
+                  <span>{link.name}</span>
 
-            <Link
-              href="/routine"
-              className="hover:text-indigo-400 transition-colors"
-            >
-              Routine
-            </Link>
+                  {isActive(link.href) && (
+                    <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-5 h-[2px] rounded-full bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.8)]" />
+                  )}
+                </Link>
+              );
+            })}
 
-            {/* Dashboard */}
+            {/* DASHBOARD */}
+
             {user && (
               <Link
                 href={dashboardLink}
-                className="hover:text-indigo-400 transition-colors"
+                className={getNavLinkClass(dashboardLink)}
               >
-                {user.role === "cr" ? "CR Panel" : "Dashboard"}
+                {user.role === "cr" ? (
+                  <Users className="w-3.5 h-3.5" />
+                ) : (
+                  <BookOpen className="w-3.5 h-3.5" />
+                )}
+
+                <span>
+                  {user.role === "cr" ? "CR Panel" : "Dashboard"}
+                </span>
               </Link>
             )}
           </div>
 
           {/* ==========================================
-              DESKTOP RIGHT SIDE
+              DESKTOP RIGHT
           ========================================== */}
 
-          <div className="hidden md:flex items-center gap-4">
-
+          <div className="hidden md:flex items-center">
             {user ? (
               <div className="relative">
 
-                {/* User Button */}
+                {/* USER BUTTON */}
 
                 <button
-                  onClick={() =>
-                    setDropdownOpen(!dropdownOpen)
-                  }
-                  className="flex items-center gap-2.5 py-1.5 px-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all text-slate-200"
+                  onClick={() => setDropdownOpen((prev) => !prev)}
+                  className="flex items-center gap-2.5 py-1.5 px-3 rounded-xl bg-slate-900/80 border border-slate-700/70 hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-[0_0_20px_rgba(99,102,241,0.12)] transition-all duration-300"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/30">
-                    <User className="w-3.5 h-3.5" />
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600/15 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                    <User className="w-4 h-4" />
                   </div>
 
                   <div className="text-left">
-                    <span className="text-xs font-semibold max-w-[120px] truncate block">
+                    <span className="text-xs font-semibold max-w-[120px] truncate block text-white">
                       {user.name}
                     </span>
 
                     {user.role === "cr" && (
                       <span className="text-[9px] text-indigo-400 font-medium">
-                        CR
+                        Class Representative
                       </span>
                     )}
                   </div>
 
                   <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                      dropdownOpen ? "rotate-180" : ""
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-300 ${
+                      dropdownOpen ? "rotate-180 text-indigo-400" : ""
                     }`}
                   />
                 </button>
 
-                {/* ==========================================
-                    DROPDOWN
-                ========================================== */}
+                {/* DROPDOWN */}
 
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden py-1 z-50">
+                  <div className="absolute right-0 mt-3 w-56 bg-slate-950/95 backdrop-blur-xl border border-slate-700/70 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.5)] overflow-hidden py-1.5">
 
-                    <div className="px-4 py-2 border-b border-slate-800">
-                      <p className="text-[10px] text-slate-400">
+                    <div className="px-4 py-3 border-b border-slate-800">
+                      <p className="text-[10px] text-slate-500">
                         Signed in as
                       </p>
 
-                      <p className="text-xs font-bold text-white truncate">
+                      <p className="text-sm font-bold text-white truncate mt-0.5">
                         {user.name}
                       </p>
 
                       {user.role === "cr" && (
-                        <p className="text-[10px] text-indigo-400 font-medium mt-0.5">
+                        <p className="text-[10px] text-indigo-400 font-medium mt-1">
                           Class Representative
                         </p>
                       )}
@@ -231,8 +294,10 @@ export default function Navbar() {
                     <Link
                       href={dashboardLink}
                       onClick={() => setDropdownOpen(false)}
-                      className="block px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2.5 text-xs text-slate-300 hover:text-white hover:bg-indigo-500/10 transition-all"
                     >
+                      <BookOpen className="w-3.5 h-3.5" />
+
                       {user.role === "cr"
                         ? "CR Dashboard"
                         : "Dashboard"}
@@ -240,7 +305,7 @@ export default function Navbar() {
 
                     <button
                       onClick={handleLogout}
-                      className="w-full text-left px-4 py-2 text-xs text-rose-400 hover:bg-slate-800 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all flex items-center gap-2"
                     >
                       <LogOut className="w-3.5 h-3.5" />
 
@@ -250,41 +315,37 @@ export default function Navbar() {
                 )}
               </div>
             ) : (
-              /* ==========================================
-                  NOT LOGGED IN
-              ========================================== */
+              <div className="flex items-center gap-2">
 
-              <div className="flex items-center gap-3">
+                {/* LOGIN */}
 
                 <Link
                   href="/Login"
-                  className="text-xs font-semibold px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-900 transition-all border border-slate-800"
+                  className="text-xs font-semibold px-4 py-2.5 rounded-xl text-slate-300 border border-slate-700/70 hover:text-white hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-[0_0_18px_rgba(99,102,241,0.12)] transition-all duration-300"
                 >
                   Log In
                 </Link>
 
+                {/* SIGNUP */}
+
                 <Link
                   href="/Signup"
-                  className="text-xs font-semibold px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all"
+                  className="text-xs font-semibold px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white border border-indigo-400/30 shadow-lg shadow-indigo-600/20 hover:shadow-indigo-500/40 transition-all duration-300"
                 >
                   Sign Up
                 </Link>
-
               </div>
             )}
           </div>
 
           {/* ==========================================
-              MOBILE MENU BUTTON
+              MOBILE BUTTON
           ========================================== */}
 
           <div className="md:hidden flex items-center">
-
             <button
-              onClick={() =>
-                setMobileMenuOpen(!mobileMenuOpen)
-              }
-              className="p-2 rounded-xl bg-slate-900 text-slate-300 border border-slate-800"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              className="p-2.5 rounded-xl bg-slate-900/80 text-slate-300 border border-slate-700/70 hover:border-indigo-400/40 hover:text-white hover:bg-indigo-500/10 transition-all duration-300"
             >
               {mobileMenuOpen ? (
                 <X className="w-5 h-5" />
@@ -292,7 +353,6 @@ export default function Navbar() {
                 <Menu className="w-5 h-5" />
               )}
             </button>
-
           </div>
         </div>
       </div>
@@ -302,80 +362,68 @@ export default function Navbar() {
       ========================================== */}
 
       {mobileMenuOpen && (
-        <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 pt-3 pb-5 space-y-3">
+        <div className="md:hidden border-t border-slate-800/80 bg-slate-950/90 backdrop-blur-xl rounded-b-2xl px-4 pt-4 pb-5">
 
-          {/* Links */}
+          <div className="flex flex-col gap-1.5">
+            {navLinks.map((link) => {
+              const Icon = link.icon;
 
-          <div className="flex flex-col space-y-2 text-sm text-slate-300">
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={
+                    isActive(link.href)
+                      ? "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm text-white bg-indigo-500/10 border border-indigo-400/30 transition-all"
+                      : "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm text-slate-300 border border-transparent hover:text-white hover:bg-indigo-500/10 hover:border-indigo-400/30 transition-all"
+                  }
+                >
+                  <Icon className="w-4 h-4" />
 
-            <Link
-              href="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-1 hover:text-indigo-400"
-            >
-              Home
-            </Link>
+                  {link.name}
+                </Link>
+              );
+            })}
 
-            <Link
-              href="/About"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-1 hover:text-indigo-400"
-            >
-              About
-            </Link>
+            {/* DASHBOARD */}
 
             {user && (
               <Link
                 href={dashboardLink}
                 onClick={() => setMobileMenuOpen(false)}
-                className="py-1 hover:text-indigo-400"
+                className="flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm text-slate-300 border border-transparent hover:text-white hover:bg-indigo-500/10 hover:border-indigo-400/30 transition-all"
               >
+                {user.role === "cr" ? (
+                  <Users className="w-4 h-4" />
+                ) : (
+                  <BookOpen className="w-4 h-4" />
+                )}
+
                 {user.role === "cr"
                   ? "CR Panel"
                   : "Dashboard"}
               </Link>
             )}
-
-            <Link
-              href="/routine"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-1 hover:text-indigo-400"
-            >
-              Routine
-            </Link>
-
-            <Link
-              href="/notes"
-              onClick={() => setMobileMenuOpen(false)}
-              className="py-1 hover:text-indigo-400"
-            >
-              Notes
-            </Link>
           </div>
 
-          {/* ==========================================
-              MOBILE USER
-          ========================================== */}
+          {/* MOBILE USER */}
 
-          <div className="pt-3 border-t border-slate-800">
-
+          <div className="pt-4 mt-3 border-t border-slate-800">
             {user ? (
               <div className="space-y-3">
 
-                {/* User Info */}
-
-                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
-
-                  <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/30">
-                    <User className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-600/15 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                    <User className="w-4 h-4" />
                   </div>
 
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">
+                    <p className="text-sm font-bold text-white truncate">
                       {user.name}
                     </p>
 
-                    <p className="text-[10px] text-slate-400 truncate">
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
                       {user.role === "cr"
                         ? `${user.group || "Group"} · CR`
                         : user.email || user.roll || "Student"}
@@ -383,29 +431,22 @@ export default function Navbar() {
                   </div>
                 </div>
 
-                {/* Logout */}
-
                 <button
                   onClick={handleLogout}
-                  className="w-full py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 hover:border-rose-400/30 text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                 >
                   <LogOut className="w-4 h-4" />
 
                   <span>Log Out</span>
                 </button>
-
               </div>
             ) : (
-              /* ==========================================
-                  MOBILE LOGIN
-              ========================================== */
-
               <div className="grid grid-cols-2 gap-2">
 
                 <Link
                   href="/Login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center py-2.5 rounded-xl text-xs font-semibold border border-slate-800 text-slate-300 bg-slate-950"
+                  className="text-center py-3 rounded-xl text-xs font-semibold border border-slate-700 text-slate-300 bg-slate-900/70 hover:text-white hover:border-indigo-400/40 hover:bg-indigo-500/10 transition-all"
                 >
                   Log In
                 </Link>
@@ -413,7 +454,7 @@ export default function Navbar() {
                 <Link
                   href="/Signup"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 text-white"
+                  className="text-center py-3 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 text-white border border-indigo-400/30 shadow-lg shadow-indigo-600/20 transition-all"
                 >
                   Sign Up
                 </Link>

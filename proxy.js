@@ -2,17 +2,22 @@ import { auth } from "@/app/lib/auth";
 import { NextResponse } from "next/server";
 
 export async function proxy(request) {
-  const pathname = request.nextUrl.pathname;
+  const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/Student-dashboard")) {
-    const session = await auth.api.getSession({
-      headers: request.headers,
-    });
+    try {
+      const session = await auth.api.getSession({
+        headers: request.headers,
+      });
 
-    if (!session?.user) {
-      return NextResponse.redirect(
-        new URL("/Login", request.url)
-      );
+      if (!session || !session.user) {
+        const loginUrl = new URL("/Login", request.url);
+        loginUrl.searchParams.set("callbackUrl", pathname); // optional
+        return NextResponse.redirect(loginUrl);
+      }
+    } catch (error) {
+      console.error("Middleware auth error:", error);
+      return NextResponse.redirect(new URL("/Login", request.url));
     }
   }
 
@@ -20,5 +25,5 @@ export async function proxy(request) {
 }
 
 export const config = {
-  matcher: ["/Student-dashboard/:path*", "/Student-dashboard"],
+  matcher: ["/Student-dashboard/:path*","/study-room"],
 };

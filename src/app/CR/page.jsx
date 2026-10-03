@@ -24,8 +24,7 @@ export default function WhatsAppButton() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-      {/* ================= CR OPTIONS ================= */}
+    <div className="relative flex flex-col items-end">
       <AnimatePresence>
         {open && (
           <motion.div
@@ -35,14 +34,12 @@ export default function WhatsAppButton() {
             transition={{ duration: 0.2 }}
             className="w-60 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/40"
           >
-            {/* Header */}
             <div className="border-b border-slate-800 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                 Message a CR
               </p>
             </div>
 
-            {/* CR List */}
             {crs.map((cr) => (
               <a
                 key={cr.name}
@@ -52,7 +49,6 @@ export default function WhatsAppButton() {
                 onClick={() => setOpen(false)}
                 className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-800"
               >
-                {/* Profile Image */}
                 <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-700">
                   <Image
                     src={cr.image}
@@ -63,9 +59,8 @@ export default function WhatsAppButton() {
                   />
                 </div>
 
-                {/* Info */}
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white group-hover:text-emerald-400 transition-colors">
+                  <p className="text-sm font-semibold text-white transition-colors group-hover:text-emerald-400">
                     {cr.name}
                   </p>
 
@@ -79,7 +74,6 @@ export default function WhatsAppButton() {
         )}
       </AnimatePresence>
 
-      {/* ================= MAIN BUTTON ================= */}
       <motion.button
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.95 }}
@@ -94,7 +88,7 @@ export default function WhatsAppButton() {
         {open ? (
           <X className="h-6 w-6" />
         ) : (
-          <MessageCircle className="h-6 animate-bounce w-6" />
+          <MessageCircle className="h-6 w-6 animate-bounce" />
         )}
       </motion.button>
     </div>

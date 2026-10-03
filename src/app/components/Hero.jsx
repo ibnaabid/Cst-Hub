@@ -94,14 +94,14 @@ export default function HeroSlider() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5">
                 <Link
-                  href="/register"
+                  href="/Signup"
                   className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/40 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   Get Started Free
                   <ArrowRight className="w-4 h-4" />
                 </Link>
                 <Link
-                  href="/features"
+                  href="/Features"
                   className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm backdrop-blur-md transition-all flex items-center justify-center active:scale-[0.98]"
                 >
                   Explore Features
