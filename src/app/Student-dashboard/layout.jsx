@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, 
   Users, 
-  Calendar, 
+  Phone, 
   FileText, 
   BookOpen, 
   LogOut, 
@@ -24,7 +24,7 @@ export default function StudentDashboardLayout({ children }) {
   const navItems = [
     { name: 'Dashboard', href: '/Student-dashboard', icon: LayoutDashboard },
     { name: 'Student Directory', href: '/Student-dashboard/students', icon: Users },
-    // { name: 'Routines', href: '/Student-dashboard/routines', icon: Calendar },
+    { name: 'Teacher Contact', href: '/Student-dashboard/Teacher-Contact', icon: Phone },
     { name: 'Notices', href: '/Student-dashboard/notices', icon: FileText },
     { name: 'Notes & PDFs', href: '/Student-dashboard/notes', icon: BookOpen }, // নতুন নোটস/পিডিএফ রুট
   ];

@@ -20,7 +20,7 @@ const staticRoutines = [
     fileType: 'PDF',
     fileUrl:
       '/WhatsApp Image 2026-10-02 at 12.12.32.jpeg',
-    uploadedBy: 'CR — রাকিব',
+    uploadedBy: 'CR — RATUL',
     date: '০২ অক্টোবর ২০২৬',
   },
   {
@@ -31,7 +31,7 @@ const staticRoutines = [
       'সিএসটি টেকনোলজির ৪র্থ পর্ব গ্রুপ B শিক্ষার্থীদের নিয়মিত ক্লাস রুটিন।',
     fileType: 'Image',
     fileUrl: '/WhatsApp Image 2026-10-02 at 12.12.31.jpeg',
-    uploadedBy: 'CR — তানভীর',
+    uploadedBy: 'CR — TASFIK',
     date: '০১ অক্টোবর ২০২৬',
   },
 ];
