@@ -14,7 +14,7 @@ import {
   User,
 } from "lucide-react";
 
-const API_URL = "https://csthub-backend.vercel.app";
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function AllNotes() {
   const [notes, setNotes] = useState([]);

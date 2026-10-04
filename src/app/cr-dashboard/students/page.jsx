@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { HiOutlineArrowLeft, HiOutlineRefresh } from "react-icons/hi";
 import { useRouter } from "next/navigation";
 
-const API_URL = "https://csthub-backend.vercel.app";
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function StudentsPage() {
   const router = useRouter();

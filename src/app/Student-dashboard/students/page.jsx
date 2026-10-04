@@ -9,7 +9,7 @@ import {
   Crown,
 } from "lucide-react";
 
-const API_URL = "https://csthub-backend.vercel.app";
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function AllStudents() {
   const [students, setStudents] = useState([]);

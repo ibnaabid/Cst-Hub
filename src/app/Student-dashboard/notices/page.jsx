@@ -16,7 +16,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-const API_URL = "https://csthub-backend.vercel.app";
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function AllNotices() {
   const [notices, setNotices] = useState([]);

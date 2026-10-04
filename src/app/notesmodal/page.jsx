@@ -7,7 +7,7 @@ import {
   HiOutlineCheck,
 } from "react-icons/hi";
 
-const API_URL = "https://csthub-backend.vercel.app";
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function EditNoticeForm({ notice }) {
   const [isOpen, setIsOpen] = useState(false);

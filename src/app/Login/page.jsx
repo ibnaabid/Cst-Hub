@@ -84,7 +84,7 @@ export default function LoginPage() {
       // ==========================================
       // STUDENT LOGIN FROM BACKEND
       // ==========================================
-      const response = await fetch("https://csthub-backend.vercel.app/login", {
+      const response = await fetch("https://csthub-backend-dw3l.onrender.com/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

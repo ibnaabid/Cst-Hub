@@ -113,7 +113,7 @@ export default function AskWithImage() {
       );
 
       const response = await fetch(
-        "https://csthub-backend.vercel.app/api/ai/explain-image",
+        "https://csthub-backend-dw3l.onrender.com/api/ai/explain-image",
         {
           method: "POST",
           body: formData,

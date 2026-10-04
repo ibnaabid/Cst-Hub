@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const API_URL = 'https://csthub-backend.vercel.app';
+const API_URL = 'https://csthub-backend-dw3l.onrender.com';
 
 export default function CRDashboardPage() {
   const router = useRouter();
