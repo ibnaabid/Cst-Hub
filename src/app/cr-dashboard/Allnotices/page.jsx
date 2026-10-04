@@ -11,7 +11,7 @@ import {
 } from "react-icons/hi";
 import EditNoticeForm from "@/app/notesmodal/page";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://csthub-backend.vercel.app";
 
 export default function NoticesPage() {
   const router = useRouter();

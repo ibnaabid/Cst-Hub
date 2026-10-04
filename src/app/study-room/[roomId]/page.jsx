@@ -7,7 +7,7 @@ import { Mic, MicOff, Video, VideoOff, MessageSquare, PhoneOff, Copy, Check } fr
 import Link from "next/link";
 import toast from "react-hot-toast";
 
-const SOCKET_SERVER_URL = "http://localhost:8000";
+const SOCKET_SERVER_URL = "https://csthub-backend.vercel.app";
 
 const configuration = {
   iceServers: [

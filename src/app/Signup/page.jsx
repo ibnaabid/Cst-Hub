@@ -46,7 +46,7 @@ export default function RegisterPage() {
 
       // ================= SAVE STUDENT TO MONGODB =================
 
-      const response = await fetch('http://localhost:8000/students', {
+      const response = await fetch('https://csthub-backend.vercel.app/students', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

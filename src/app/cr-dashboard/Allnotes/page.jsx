@@ -12,7 +12,7 @@ import {
   HiOutlineDocumentText,
 } from "react-icons/hi";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://csthub-backend.vercel.app";
 
 export default function NotesPage() {
   const router = useRouter();

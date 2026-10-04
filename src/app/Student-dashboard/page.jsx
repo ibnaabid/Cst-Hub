@@ -25,7 +25,7 @@ import {
   Tooltip,
 } from "recharts";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://csthub-backend.vercel.app";
 
 export default function DynamicDashboardHomePage() {
   const router = useRouter();
