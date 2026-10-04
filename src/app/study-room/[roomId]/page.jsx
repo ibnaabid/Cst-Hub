@@ -3,10 +3,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { io } from "socket.io-client";
-import { Mic, MicOff, Video, VideoOff, MessageSquare, PhoneOff, Copy, Check } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MessageSquare,
+  PhoneOff,
+  Copy,
+  Check,
+  SwitchCamera,
+} from "lucide-react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
+// Local test এর জন্য:
+// const SOCKET_SERVER_URL = "http://localhost:8000";
+
+// Vercel (Socket.IO limited):
 const SOCKET_SERVER_URL = "https://csthub-backend.vercel.app";
 
 const configuration = {
@@ -27,6 +41,8 @@ export default function StudyRoomPage() {
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [facingMode, setFacingMode] = useState("user"); // user = front, environment = back
+  const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState([
     { sender: "System", text: `Welcome to CST HUB Study Room! Topic: ${topic}` },
   ]);
@@ -38,7 +54,6 @@ export default function StudyRoomPage() {
   const peerConnectionRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Peer Connection তৈরির ফাংশন
   const createPeerConnection = (remoteSocketId, socketInstance) => {
     const pc = new RTCPeerConnection(configuration);
 
@@ -68,33 +83,72 @@ export default function StudyRoomPage() {
     return pc;
   };
 
+  // Camera start with facingMode
+  const startCamera = async (mode = "user") => {
+    try {
+      // আগের stream বন্ধ করো
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: mode },
+        audio: true,
+      });
+
+      localStreamRef.current = mediaStream;
+
+      if (userVideoRef.current) {
+        userVideoRef.current.srcObject = mediaStream;
+      }
+
+      // Peer connection-এ নতুন track replace করো
+      if (peerConnectionRef.current) {
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        const sender = peerConnectionRef.current
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
+
+        if (sender && videoTrack) {
+          await sender.replaceTrack(videoTrack);
+        }
+      }
+
+      return mediaStream;
+    } catch (err) {
+      console.error("Camera error:", err);
+      toast.error("ক্যামেরা এক্সেস পাওয়া যায়নি!");
+      return null;
+    }
+  };
+
+  // Front / Back switch
+  const switchCamera = async () => {
+    const newMode = facingMode === "user" ? "environment" : "user";
+    setFacingMode(newMode);
+    await startCamera(newMode);
+    toast.success(newMode === "user" ? "Front camera" : "Back camera");
+  };
+
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
       try {
-        // 1. Camera + Mic
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const mediaStream = await startCamera("user");
+        if (!mounted || !mediaStream) return;
 
-        if (!mounted) {
-          mediaStream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-
-        localStreamRef.current = mediaStream;
-        if (userVideoRef.current) {
-          userVideoRef.current.srcObject = mediaStream;
-        }
-
-        // 2. Socket
-        const localUser = localStorage.getItem("currentUser");
+        const localUser =
+          localStorage.getItem("currentUser") ||
+          sessionStorage.getItem("currentUser");
         const parsedUser = localUser ? JSON.parse(localUser) : null;
-        const userId = parsedUser?.id || "user-" + Math.random().toString(36).substring(7);
+        const userId =
+          parsedUser?._id ||
+          parsedUser?.id ||
+          "user-" + Math.random().toString(36).substring(7);
 
         const newSocket = io(SOCKET_SERVER_URL, {
+          transports: ["websocket", "polling"],
           extraHeaders: { "user-id": userId },
         });
 
@@ -103,10 +157,17 @@ export default function StudyRoomPage() {
 
         newSocket.on("connect", () => {
           console.log("Connected:", newSocket.id);
+          setIsConnected(true);
+          toast.success("Server connected");
           newSocket.emit("join-study-room", roomId);
         });
 
-        // 3. New user joined → create offer
+        newSocket.on("connect_error", (err) => {
+          console.error("Socket connect error:", err);
+          setIsConnected(false);
+          toast.error("Server connection failed! Vercel-এ Socket.IO limited।");
+        });
+
         newSocket.on("user-connected", async ({ socketId: remoteSocketId }) => {
           toast.success("নতুন একজন শিক্ষার্থী যুক্ত হয়েছে!");
           console.log("Creating offer for:", remoteSocketId);
@@ -131,7 +192,6 @@ export default function StudyRoomPage() {
           });
         });
 
-        // 4. Receive Offer → send Answer
         newSocket.on("offer", async ({ offer, caller }) => {
           console.log("Received offer from:", caller);
 
@@ -142,9 +202,11 @@ export default function StudyRoomPage() {
           const pc = createPeerConnection(caller, newSocket);
           peerConnectionRef.current = pc;
 
-          mediaStream.getTracks().forEach((track) => {
-            pc.addTrack(track, mediaStream);
-          });
+          if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track) => {
+              pc.addTrack(track, localStreamRef.current);
+            });
+          }
 
           await pc.setRemoteDescription(new RTCSessionDescription(offer));
           const answer = await pc.createAnswer();
@@ -156,7 +218,6 @@ export default function StudyRoomPage() {
           });
         });
 
-        // 5. Receive Answer
         newSocket.on("answer", async ({ answer }) => {
           console.log("Received answer");
           if (peerConnectionRef.current) {
@@ -166,7 +227,6 @@ export default function StudyRoomPage() {
           }
         });
 
-        // 6. ICE Candidate
         newSocket.on("ice-candidate", async ({ candidate }) => {
           if (peerConnectionRef.current && candidate) {
             try {
@@ -179,7 +239,6 @@ export default function StudyRoomPage() {
           }
         });
 
-        // 7. User left
         newSocket.on("user-disconnected", () => {
           toast("শিক্ষার্থী রুম ছেড়ে চলে গেছে।", { icon: "👋" });
           if (peerVideoRef.current) {
@@ -191,22 +250,19 @@ export default function StudyRoomPage() {
           }
         });
 
-        // 8. Chat message receive
         newSocket.on("chat-message", ({ sender, text }) => {
           setMessages((prev) => [...prev, { sender, text }]);
         });
       } catch (err) {
-        console.error("Camera/Mic error:", err);
+        console.error("Init error:", err);
         toast.error("ক্যামেরা বা মাইক্রোফোন এক্সেস পাওয়া যায়নি!");
       }
     };
 
     init();
 
-    // Cleanup
     return () => {
       mounted = false;
-
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -219,11 +275,10 @@ export default function StudyRoomPage() {
     };
   }, [roomId]);
 
-  // Handlers
   const handleCopyRoomId = () => {
     navigator.clipboard.writeText(roomId);
     setCopied(true);
-    toast.success("Room ID কপি করা হয়েছে! বন্ধুদের পাঠিয়ে দাও।");
+    toast.success("Room ID কপি করা হয়েছে!");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -254,7 +309,6 @@ export default function StudyRoomPage() {
     const message = { sender: "You", text: inputMsg.trim() };
     setMessages((prev) => [...prev, message]);
 
-    // Real-time chat
     socket.emit("chat-message", {
       roomId,
       text: inputMsg.trim(),
@@ -269,7 +323,11 @@ export default function StudyRoomPage() {
       <header className="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between shrink-0">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                isConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+              }`}
+            />
             <h1 className="text-xs sm:text-sm font-bold text-white">
               📚 {subject}: {topic}
             </h1>
@@ -277,13 +335,19 @@ export default function StudyRoomPage() {
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-slate-400">
               Room ID:{" "}
-              <span className="text-indigo-400 font-mono font-semibold">{roomId}</span>
+              <span className="text-indigo-400 font-mono font-semibold">
+                {roomId}
+              </span>
             </p>
             <button
               onClick={handleCopyRoomId}
               className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all flex items-center gap-1 text-[10px] border border-slate-700"
             >
-              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+              {copied ? (
+                <Check className="w-3 h-3 text-emerald-400" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
               <span>{copied ? "Copied" : "Copy ID"}</span>
             </button>
           </div>
@@ -309,11 +373,13 @@ export default function StudyRoomPage() {
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-cover transform -scale-x-100"
+              className={`absolute inset-0 w-full h-full object-cover ${
+                facingMode === "user" ? "transform -scale-x-100" : ""
+              }`}
             />
             <div className="absolute bottom-3 left-3 z-20">
               <span className="text-xs font-semibold text-white bg-slate-950/70 px-2.5 py-1 rounded-lg backdrop-blur-md">
-                You (Host)
+                You ({facingMode === "user" ? "Front" : "Back"})
               </span>
             </div>
           </div>
@@ -347,13 +413,18 @@ export default function StudyRoomPage() {
                 key={idx}
                 className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60"
               >
-                <span className="font-bold text-indigo-400 block mb-0.5">{m.sender}</span>
+                <span className="font-bold text-indigo-400 block mb-0.5">
+                  {m.sender}
+                </span>
                 <p className="text-slate-300">{m.text}</p>
               </div>
             ))}
           </div>
 
-          <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-800 flex gap-2">
+          <form
+            onSubmit={handleSendMessage}
+            className="p-3 border-t border-slate-800 flex gap-2"
+          >
             <input
               type="text"
               placeholder="Ask a question..."
@@ -372,7 +443,7 @@ export default function StudyRoomPage() {
       </div>
 
       {/* Controls */}
-      <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-center gap-4 shrink-0">
+      <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-center gap-3 sm:gap-4 shrink-0">
         <button
           onClick={toggleMic}
           className={`p-3.5 rounded-2xl border transition-all ${
@@ -392,7 +463,20 @@ export default function StudyRoomPage() {
               : "bg-rose-500/20 border-rose-500/30 text-rose-400"
           }`}
         >
-          {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+          {isVideoOn ? (
+            <Video className="w-5 h-5" />
+          ) : (
+            <VideoOff className="w-5 h-5" />
+          )}
+        </button>
+
+        {/* Camera Switch Button */}
+        <button
+          onClick={switchCamera}
+          className="p-3.5 rounded-2xl border bg-slate-800 border-slate-700 text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all"
+          title="Switch Camera"
+        >
+          <SwitchCamera className="w-5 h-5" />
         </button>
 
         <Link
