@@ -17,10 +17,6 @@ import {
 import Link from "next/link";
 import toast from "react-hot-toast";
 
-// Local test এর জন্য:
-// const SOCKET_SERVER_URL = "http://localhost:8000";
-
-// Vercel (Socket.IO limited):
 const SOCKET_SERVER_URL = "https://csthub-backend.vercel.app";
 
 const configuration = {
@@ -41,10 +37,14 @@ export default function StudyRoomPage() {
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [facingMode, setFacingMode] = useState("user"); // user = front, environment = back
+  const [facingMode, setFacingMode] = useState("user");
   const [isConnected, setIsConnected] = useState(false);
+  const [hasMedia, setHasMedia] = useState(false);
   const [messages, setMessages] = useState([
-    { sender: "System", text: `Welcome to CST HUB Study Room! Topic: ${topic}` },
+    {
+      sender: "System",
+      text: `Welcome to CST HUB Study Room! Topic: ${topic}`,
+    },
   ]);
   const [inputMsg, setInputMsg] = useState("");
 
@@ -75,7 +75,10 @@ export default function StudyRoomPage() {
 
     pc.onconnectionstatechange = () => {
       console.log("Connection state:", pc.connectionState);
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+      if (
+        pc.connectionState === "failed" ||
+        pc.connectionState === "disconnected"
+      ) {
         toast.error("Connection lost");
       }
     };
@@ -83,10 +86,9 @@ export default function StudyRoomPage() {
     return pc;
   };
 
-  // Camera start with facingMode
+  // Camera start — fail হলে null return
   const startCamera = async (mode = "user") => {
     try {
-      // আগের stream বন্ধ করো
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -97,18 +99,19 @@ export default function StudyRoomPage() {
       });
 
       localStreamRef.current = mediaStream;
+      setHasMedia(true);
+      setIsVideoOn(true);
+      setIsMicOn(true);
 
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = mediaStream;
       }
 
-      // Peer connection-এ নতুন track replace করো
       if (peerConnectionRef.current) {
         const videoTrack = mediaStream.getVideoTracks()[0];
         const sender = peerConnectionRef.current
           .getSenders()
           .find((s) => s.track?.kind === "video");
-
         if (sender && videoTrack) {
           await sender.replaceTrack(videoTrack);
         }
@@ -116,28 +119,53 @@ export default function StudyRoomPage() {
 
       return mediaStream;
     } catch (err) {
-      console.error("Camera error:", err);
-      toast.error("ক্যামেরা এক্সেস পাওয়া যায়নি!");
-      return null;
+      console.warn("Camera+Mic failed, trying audio only...", err);
+
+      // শুধু audio try
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: true,
+        });
+        localStreamRef.current = audioStream;
+        setHasMedia(true);
+        setIsVideoOn(false);
+        setIsMicOn(true);
+        toast("ক্যামেরা নেই — শুধু অডিও চালু", { icon: "🎤" });
+        return audioStream;
+      } catch (audioErr) {
+        console.warn("Audio also failed:", audioErr);
+        setHasMedia(false);
+        setIsVideoOn(false);
+        setIsMicOn(false);
+        toast.error("ক্যামেরা/মাইক নেই — শুধু chat ব্যবহার করো");
+        return null; // তবুও room join হবে
+      }
     }
   };
 
-  // Front / Back switch
   const switchCamera = async () => {
     const newMode = facingMode === "user" ? "environment" : "user";
     setFacingMode(newMode);
-    await startCamera(newMode);
-    toast.success(newMode === "user" ? "Front camera" : "Back camera");
+    const stream = await startCamera(newMode);
+    if (stream) {
+      toast.success(newMode === "user" ? "Front camera" : "Back camera");
+    }
   };
 
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
-      try {
-        const mediaStream = await startCamera("user");
-        if (!mounted || !mediaStream) return;
+      // 1. Media try (fail হলেও continue)
+      const mediaStream = await startCamera("user");
+      if (!mounted) {
+        if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
 
+      // 2. Socket — media ছাড়াও join
+      try {
         const localUser =
           localStorage.getItem("currentUser") ||
           sessionStorage.getItem("currentUser");
@@ -163,14 +191,13 @@ export default function StudyRoomPage() {
         });
 
         newSocket.on("connect_error", (err) => {
-          console.error("Socket connect error:", err);
+          console.error("Socket error:", err);
           setIsConnected(false);
-          toast.error("Server connection failed! Vercel-এ Socket.IO limited।");
+          toast.error("Server connection failed!");
         });
 
         newSocket.on("user-connected", async ({ socketId: remoteSocketId }) => {
           toast.success("নতুন একজন শিক্ষার্থী যুক্ত হয়েছে!");
-          console.log("Creating offer for:", remoteSocketId);
 
           if (peerConnectionRef.current) {
             peerConnectionRef.current.close();
@@ -179,9 +206,12 @@ export default function StudyRoomPage() {
           const pc = createPeerConnection(remoteSocketId, newSocket);
           peerConnectionRef.current = pc;
 
-          mediaStream.getTracks().forEach((track) => {
-            pc.addTrack(track, mediaStream);
-          });
+          // track থাকলেই add
+          if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((track) => {
+              pc.addTrack(track, localStreamRef.current);
+            });
+          }
 
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -193,8 +223,6 @@ export default function StudyRoomPage() {
         });
 
         newSocket.on("offer", async ({ offer, caller }) => {
-          console.log("Received offer from:", caller);
-
           if (peerConnectionRef.current) {
             peerConnectionRef.current.close();
           }
@@ -219,7 +247,6 @@ export default function StudyRoomPage() {
         });
 
         newSocket.on("answer", async ({ answer }) => {
-          console.log("Received answer");
           if (peerConnectionRef.current) {
             await peerConnectionRef.current.setRemoteDescription(
               new RTCSessionDescription(answer)
@@ -234,7 +261,7 @@ export default function StudyRoomPage() {
                 new RTCIceCandidate(candidate)
               );
             } catch (e) {
-              console.error("Error adding ICE candidate", e);
+              console.error("ICE error:", e);
             }
           }
         });
@@ -254,8 +281,7 @@ export default function StudyRoomPage() {
           setMessages((prev) => [...prev, { sender, text }]);
         });
       } catch (err) {
-        console.error("Init error:", err);
-        toast.error("ক্যামেরা বা মাইক্রোফোন এক্সেস পাওয়া যায়নি!");
+        console.error("Socket init error:", err);
       }
     };
 
@@ -264,7 +290,7 @@ export default function StudyRoomPage() {
     return () => {
       mounted = false;
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
       }
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -276,7 +302,7 @@ export default function StudyRoomPage() {
   }, [roomId]);
 
   const handleCopyRoomId = () => {
-    navigator.clipboard.writeText(roomId);
+    navigator.clipboard.writeText(String(roomId));
     setCopied(true);
     toast.success("Room ID কপি করা হয়েছে!");
     setTimeout(() => setCopied(false), 2000);
@@ -306,8 +332,10 @@ export default function StudyRoomPage() {
     e.preventDefault();
     if (!inputMsg.trim() || !socket) return;
 
-    const message = { sender: "You", text: inputMsg.trim() };
-    setMessages((prev) => [...prev, message]);
+    setMessages((prev) => [
+      ...prev,
+      { sender: "You", text: inputMsg.trim() },
+    ]);
 
     socket.emit("chat-message", {
       roomId,
@@ -320,7 +348,7 @@ export default function StudyRoomPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Header */}
-      <header className="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between shrink-0">
+      <header className="h-16 bg-slate-900 border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span
@@ -368,18 +396,25 @@ export default function StudyRoomPage() {
         <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 h-full">
           {/* My Video */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center min-h-[220px]">
-            <video
-              ref={userVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`absolute inset-0 w-full h-full object-cover ${
-                facingMode === "user" ? "transform -scale-x-100" : ""
-              }`}
-            />
+            {hasMedia ? (
+              <video
+                ref={userVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`absolute inset-0 w-full h-full object-cover ${
+                  facingMode === "user" ? "transform -scale-x-100" : ""
+                }`}
+              />
+            ) : (
+              <div className="text-center text-slate-500">
+                <VideoOff className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-xs">No camera</p>
+              </div>
+            )}
             <div className="absolute bottom-3 left-3 z-20">
               <span className="text-xs font-semibold text-white bg-slate-950/70 px-2.5 py-1 rounded-lg backdrop-blur-md">
-                You ({facingMode === "user" ? "Front" : "Back"})
+                You {hasMedia ? `(${facingMode === "user" ? "Front" : "Back"})` : "(Chat only)"}
               </span>
             </div>
           </div>
@@ -446,7 +481,8 @@ export default function StudyRoomPage() {
       <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-center gap-3 sm:gap-4 shrink-0">
         <button
           onClick={toggleMic}
-          className={`p-3.5 rounded-2xl border transition-all ${
+          disabled={!hasMedia}
+          className={`p-3.5 rounded-2xl border transition-all disabled:opacity-40 ${
             isMicOn
               ? "bg-slate-800 border-slate-700 text-white"
               : "bg-rose-500/20 border-rose-500/30 text-rose-400"
@@ -457,7 +493,8 @@ export default function StudyRoomPage() {
 
         <button
           onClick={toggleVideo}
-          className={`p-3.5 rounded-2xl border transition-all ${
+          disabled={!hasMedia}
+          className={`p-3.5 rounded-2xl border transition-all disabled:opacity-40 ${
             isVideoOn
               ? "bg-slate-800 border-slate-700 text-white"
               : "bg-rose-500/20 border-rose-500/30 text-rose-400"
@@ -470,10 +507,10 @@ export default function StudyRoomPage() {
           )}
         </button>
 
-        {/* Camera Switch Button */}
         <button
           onClick={switchCamera}
-          className="p-3.5 rounded-2xl border bg-slate-800 border-slate-700 text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all"
+          disabled={!hasMedia}
+          className="p-3.5 rounded-2xl border bg-slate-800 border-slate-700 text-white hover:bg-indigo-600/20 hover:border-indigo-500/40 transition-all disabled:opacity-40"
           title="Switch Camera"
         >
           <SwitchCamera className="w-5 h-5" />
