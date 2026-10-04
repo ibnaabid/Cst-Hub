@@ -33,28 +33,25 @@ import {
 
 import toast from "react-hot-toast";
 
+
 /* =====================================================
    SOCKET SERVER
 ===================================================== */
-
-/*
-  LOCAL:
-  http://localhost:8000
-
-  PRODUCTION:
-  এখানে Render/Railway backend URL দিবে।
-
-  IMPORTANT:
-  Vercel URL ব্যবহার করবে না যদি সেখানে persistent
-  Socket.IO server না থাকে।
-*/
 
 const SOCKET_SERVER_URL =
   process.env.NEXT_PUBLIC_BASE_URL ||
   "http://localhost:8000";
 
+
 /* =====================================================
-   WEBRTC CONFIG
+   ROOM LIMIT
+===================================================== */
+
+const MAX_ROOM_USERS = 5;
+
+
+/* =====================================================
+   WEBRTC
 ===================================================== */
 
 const rtcConfiguration = {
@@ -63,10 +60,12 @@ const rtcConfiguration = {
       urls: "stun:stun.l.google.com:19302",
     },
     {
-      urls: "stun:global.stun.twilio.com:3478",
+      urls:
+        "stun:global.stun.twilio.com:3478",
     },
   ],
 };
+
 
 /* =====================================================
    COMPONENT
@@ -77,408 +76,648 @@ export default function StudyRoomPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const roomId = String(params.roomId || "");
+  const roomId = String(
+    params.roomId || ""
+  );
 
   const topic =
-    searchParams.get("topic") || "General Discussion";
+    searchParams.get("topic") ||
+    "General Discussion";
 
   const subject =
-    searchParams.get("subject") || "Study Session";
+    searchParams.get("subject") ||
+    "Study Session";
+
 
   /* =====================================================
-     STATES
+     STATE
   ===================================================== */
 
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isMicOn, setIsMicOn] =
+    useState(true);
 
-  const [facingMode, setFacingMode] = useState("user");
+  const [isVideoOn, setIsVideoOn] =
+    useState(true);
 
-  const [isConnected, setIsConnected] = useState(false);
+  const [facingMode, setFacingMode] =
+    useState("user");
 
-  const [hasMedia, setHasMedia] = useState(false);
+  const [isConnected, setIsConnected] =
+    useState(false);
 
-  const [participantCount, setParticipantCount] = useState(1);
+  const [hasMedia, setHasMedia] =
+    useState(false);
 
-  const [copied, setCopied] = useState(false);
+  const [participantCount, setParticipantCount] =
+    useState(1);
 
-  const [isRoomFull, setIsRoomFull] = useState(false);
+  const [copied, setCopied] =
+    useState(false);
 
-  const [messages, setMessages] = useState([
-    {
-      sender: "System",
-      text: `Welcome to CST HUB Study Room! Topic: ${topic}`,
-      system: true,
-    },
-  ]);
+  const [isRoomFull, setIsRoomFull] =
+    useState(false);
 
-  const [inputMsg, setInputMsg] = useState("");
+  const [participants, setParticipants] =
+    useState([]);
+
+  const [messages, setMessages] =
+    useState([
+      {
+        sender: "System",
+        text: `Welcome to CST HUB Study Room! Topic: ${topic}`,
+        system: true,
+      },
+    ]);
+
+  const [inputMsg, setInputMsg] =
+    useState("");
+
 
   /* =====================================================
      REFS
   ===================================================== */
 
-  const socketRef = useRef(null);
+  const socketRef =
+    useRef(null);
 
-  const localStreamRef = useRef(null);
+  const localStreamRef =
+    useRef(null);
 
-  const peerConnectionRef = useRef(null);
+  /*
+    socketId => RTCPeerConnection
+  */
 
-  const remoteSocketIdRef = useRef(null);
+  const peerConnectionsRef =
+    useRef(new Map());
 
-  const userVideoRef = useRef(null);
+  /*
+    socketId => participant info
+  */
 
-  const peerVideoRef = useRef(null);
+  const participantsRef =
+    useRef(new Map());
+
+  /*
+    socketId => video element
+  */
+
+  const videoRefs =
+    useRef(new Map());
+
+  const userVideoRef =
+    useRef(null);
+
+  const userInfoRef =
+    useRef({
+      userId: "",
+      userName: "Student",
+    });
+
 
   /* =====================================================
-     CLEAN MEDIA
+     GET CURRENT USER
   ===================================================== */
 
-  const stopLocalStream = useCallback(() => {
-    if (localStreamRef.current) {
-      localStreamRef.current
-        .getTracks()
-        .forEach((track) => track.stop());
+  const getCurrentUser = () => {
+    try {
+      const raw =
+        localStorage.getItem(
+          "currentUser"
+        ) ||
+        sessionStorage.getItem(
+          "currentUser"
+        );
 
-      localStreamRef.current = null;
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    } catch (error) {
+      console.error(
+        "User parse error:",
+        error
+      );
     }
 
-    if (userVideoRef.current) {
-      userVideoRef.current.srcObject = null;
-    }
+    return null;
+  };
 
-    setHasMedia(false);
-  }, []);
+
+  /* =====================================================
+     STOP LOCAL STREAM
+  ===================================================== */
+
+  const stopLocalStream =
+    useCallback(() => {
+      if (
+        localStreamRef.current
+      ) {
+        localStreamRef.current
+          .getTracks()
+          .forEach((track) => {
+            track.stop();
+          });
+
+        localStreamRef.current =
+          null;
+      }
+
+      if (
+        userVideoRef.current
+      ) {
+        userVideoRef.current.srcObject =
+          null;
+      }
+
+      setHasMedia(false);
+    }, []);
+
+
+  /* =====================================================
+     CLOSE PEER
+  ===================================================== */
+
+  const closePeerConnection =
+    useCallback((socketId) => {
+      const pc =
+        peerConnectionsRef.current.get(
+          socketId
+        );
+
+      if (pc) {
+        pc.close();
+
+        peerConnectionsRef.current.delete(
+          socketId
+        );
+      }
+
+      const video =
+        videoRefs.current.get(
+          socketId
+        );
+
+      if (video) {
+        video.srcObject = null;
+      }
+
+      videoRefs.current.delete(
+        socketId
+      );
+    }, []);
+
 
   /* =====================================================
      CREATE PEER CONNECTION
   ===================================================== */
 
-  const createPeerConnection = useCallback(
-    (remoteSocketId, socketInstance) => {
-      const pc = new RTCPeerConnection(
-        rtcConfiguration
-      );
+  const createPeerConnection =
+    useCallback(
+      (
+        remoteSocketId,
+        socketInstance
+      ) => {
+        /*
+          Already exists
+        */
 
-      remoteSocketIdRef.current = remoteSocketId;
+        const oldPc =
+          peerConnectionsRef.current.get(
+            remoteSocketId
+          );
 
-      /* =========================
-         LOCAL ICE
-      ========================= */
+        if (oldPc) {
+          return oldPc;
+        }
 
-      pc.onicecandidate = (event) => {
-        if (!event.candidate) {
+        const pc =
+          new RTCPeerConnection(
+            rtcConfiguration
+          );
+
+
+        /* =================================================
+           SAVE
+        ================================================= */
+
+        peerConnectionsRef.current.set(
+          remoteSocketId,
+          pc
+        );
+
+
+        /* =================================================
+           ICE
+        ================================================= */
+
+        pc.onicecandidate = (
+          event
+        ) => {
+          if (
+            !event.candidate
+          ) {
+            return;
+          }
+
+          socketInstance.emit(
+            "ice-candidate",
+            {
+              target:
+                remoteSocketId,
+              candidate:
+                event.candidate,
+            }
+          );
+        };
+
+
+        /* =================================================
+           REMOTE VIDEO
+        ================================================= */
+
+    pc.ontrack = (event) => {
+  console.log(
+    "🎥 Remote track received:",
+    remoteSocketId
+  );
+
+  const remoteStream = event.streams?.[0];
+
+  if (!remoteStream) {
+    return;
+  }
+
+  let participant =
+    participantsRef.current.get(
+      remoteSocketId
+    );
+
+  if (!participant) {
+    participant = {
+      socketId: remoteSocketId,
+      userId: "",
+      userName: "Student",
+      stream: null,
+    };
+  }
+
+  participant.stream = remoteStream;
+
+  participantsRef.current.set(
+    remoteSocketId,
+    participant
+  );
+
+  setParticipants(
+    Array.from(
+      participantsRef.current.values()
+    )
+  );
+};
+        /* =================================================
+           CONNECTION STATE
+        ================================================= */
+
+        pc.onconnectionstatechange =
+          () => {
+            console.log(
+              `WebRTC ${remoteSocketId}:`,
+              pc.connectionState
+            );
+
+            if (
+              pc.connectionState ===
+              "connected"
+            ) {
+              console.log(
+                "✅ Connected:",
+                remoteSocketId
+              );
+            }
+
+            if (
+              pc.connectionState ===
+                "failed" ||
+              pc.connectionState ===
+                "closed"
+            ) {
+              closePeerConnection(
+                remoteSocketId
+              );
+
+              setParticipants(
+                Array.from(
+                  participantsRef.current.values()
+                )
+              );
+            }
+          };
+
+
+        /* =================================================
+           LOCAL TRACKS
+        ================================================= */
+
+        const stream =
+          localStreamRef.current;
+
+        if (stream) {
+          stream
+            .getTracks()
+            .forEach((track) => {
+              pc.addTrack(
+                track,
+                stream
+              );
+            });
+        }
+
+        return pc;
+      },
+      [closePeerConnection]
+    );
+
+
+  /* =====================================================
+     CREATE OFFER
+  ===================================================== */
+
+  const createOfferForUser =
+    useCallback(
+      async (
+        remoteSocketId
+      ) => {
+        const socket =
+          socketRef.current;
+
+        if (
+          !socket ||
+          !socket.connected
+        ) {
           return;
         }
 
-        socketInstance.emit("ice-candidate", {
-          target: remoteSocketId,
-          candidate: event.candidate,
-        });
-      };
-
-      /* =========================
-         REMOTE TRACK
-      ========================= */
-
-      pc.ontrack = (event) => {
-        console.log("Remote track received");
-
-        if (peerVideoRef.current) {
-          peerVideoRef.current.srcObject =
-            event.streams[0];
-        }
-      };
-
-      /* =========================
-         CONNECTION STATE
-      ========================= */
-
-      pc.onconnectionstatechange = () => {
-        console.log(
-          "WebRTC:",
-          pc.connectionState
-        );
-
-        if (
-          pc.connectionState === "connected"
-        ) {
-          toast.success("Student connected!");
-        }
-
-        if (
-          pc.connectionState === "failed"
-        ) {
-          toast.error(
-            "Video connection failed"
-          );
-        }
-
-        if (
-          pc.connectionState ===
-            "disconnected" ||
-          pc.connectionState === "closed"
-        ) {
-          if (peerVideoRef.current) {
-            peerVideoRef.current.srcObject =
-              null;
-          }
-        }
-      };
-
-      return pc;
-    },
-    []
-  );
-
-  /* =====================================================
-     ADD LOCAL TRACKS
-  ===================================================== */
-
-  const addLocalTracks = useCallback(
-    (pc) => {
-      const stream =
-        localStreamRef.current;
-
-      if (!stream) {
-        return;
-      }
-
-      const existingSenders =
-        pc.getSenders();
-
-      stream.getTracks().forEach((track) => {
-        const alreadyExists =
-          existingSenders.some(
-            (sender) =>
-              sender.track?.kind ===
-              track.kind
+        let pc =
+          peerConnectionsRef.current.get(
+            remoteSocketId
           );
 
-        if (!alreadyExists) {
-          pc.addTrack(track, stream);
+        if (!pc) {
+          pc =
+            createPeerConnection(
+              remoteSocketId,
+              socket
+            );
         }
-      });
-    },
-    []
-  );
+
+        try {
+          const offer =
+            await pc.createOffer();
+
+          await pc.setLocalDescription(
+            offer
+          );
+
+          socket.emit(
+            "offer",
+            {
+              target:
+                remoteSocketId,
+              offer,
+            }
+          );
+        } catch (error) {
+          console.error(
+            "Offer error:",
+            error
+          );
+        }
+      },
+      [createPeerConnection]
+    );
+
 
   /* =====================================================
      START CAMERA
   ===================================================== */
 
-  const startCamera = useCallback(
-    async (mode = "user") => {
-      try {
-        /*
-          Stop previous camera
-        */
-
-        if (localStreamRef.current) {
-          localStreamRef.current
-            .getTracks()
-            .forEach((track) =>
-              track.stop()
-            );
-        }
-
-        /*
-          Get new camera
-        */
-
-        const mediaStream =
-          await navigator.mediaDevices.getUserMedia(
-            {
-              video: {
-                facingMode: {
-                  ideal: mode,
-                },
-                width: {
-                  ideal: 1280,
-                },
-                height: {
-                  ideal: 720,
-                },
-              },
-              audio: true,
-            }
-          );
-
-        localStreamRef.current =
-          mediaStream;
-
-        setHasMedia(true);
-
-        setIsVideoOn(true);
-
-        setIsMicOn(true);
-
-        /*
-          Show own video
-        */
-
-        if (userVideoRef.current) {
-          userVideoRef.current.srcObject =
-            mediaStream;
-        }
-
-        /*
-          Existing WebRTC connection
-        */
-
-        const pc =
-          peerConnectionRef.current;
-
-        if (pc) {
-          const videoTrack =
-            mediaStream.getVideoTracks()[0];
-
-          const audioTrack =
-            mediaStream.getAudioTracks()[0];
-
-          const videoSender =
-            pc
-              .getSenders()
-              .find(
-                (sender) =>
-                  sender.track?.kind ===
-                  "video"
-              );
-
-          const audioSender =
-            pc
-              .getSenders()
-              .find(
-                (sender) =>
-                  sender.track?.kind ===
-                  "audio"
-              );
-
-          /*
-            Replace video
-          */
-
-          if (
-            videoSender &&
-            videoTrack
-          ) {
-            await videoSender.replaceTrack(
-              videoTrack
-            );
-          } else if (videoTrack) {
-            pc.addTrack(
-              videoTrack,
-              mediaStream
-            );
-          }
-
-          /*
-            Replace audio
-          */
-
-          if (
-            audioSender &&
-            audioTrack
-          ) {
-            await audioSender.replaceTrack(
-              audioTrack
-            );
-          } else if (audioTrack) {
-            pc.addTrack(
-              audioTrack,
-              mediaStream
-            );
-          }
-        }
-
-        return mediaStream;
-      } catch (cameraError) {
-        console.warn(
-          "Camera failed:",
-          cameraError
-        );
-
-        /*
-          Try audio only
-        */
-
+  const startCamera =
+    useCallback(
+      async (mode = "user") => {
         try {
-          const audioStream =
+          /*
+            Stop previous tracks
+          */
+
+          if (
+            localStreamRef.current
+          ) {
+            localStreamRef.current
+              .getTracks()
+              .forEach((track) => {
+                track.stop();
+              });
+          }
+
+          /*
+            New media
+          */
+
+          const mediaStream =
             await navigator.mediaDevices.getUserMedia(
               {
-                video: false,
+                video: {
+                  facingMode: {
+                    ideal: mode,
+                  },
+                  width: {
+                    ideal: 1280,
+                  },
+                  height: {
+                    ideal: 720,
+                  },
+                },
                 audio: true,
               }
             );
 
           localStreamRef.current =
-            audioStream;
+            mediaStream;
 
           setHasMedia(true);
-
-          setIsVideoOn(false);
-
+          setIsVideoOn(true);
           setIsMicOn(true);
 
-          if (userVideoRef.current) {
+          /*
+            Local video
+          */
+
+          if (
+            userVideoRef.current
+          ) {
             userVideoRef.current.srcObject =
-              audioStream;
+              mediaStream;
           }
 
-          toast(
-            "Camera পাওয়া যায়নি — শুধু microphone চালু হয়েছে",
-            {
-              icon: "🎤",
+          /*
+            Replace tracks
+            in ALL peer connections
+          */
+
+          peerConnectionsRef.current.forEach(
+            (pc) => {
+              const videoTrack =
+                mediaStream.getVideoTracks()[0];
+
+              const audioTrack =
+                mediaStream.getAudioTracks()[0];
+
+              const videoSender =
+                pc
+                  .getSenders()
+                  .find(
+                    (sender) =>
+                      sender.track
+                        ?.kind ===
+                      "video"
+                  );
+
+              const audioSender =
+                pc
+                  .getSenders()
+                  .find(
+                    (sender) =>
+                      sender.track
+                        ?.kind ===
+                      "audio"
+                  );
+
+              if (
+                videoSender &&
+                videoTrack
+              ) {
+                videoSender.replaceTrack(
+                  videoTrack
+                );
+              } else if (
+                videoTrack
+              ) {
+                pc.addTrack(
+                  videoTrack,
+                  mediaStream
+                );
+              }
+
+              if (
+                audioSender &&
+                audioTrack
+              ) {
+                audioSender.replaceTrack(
+                  audioTrack
+                );
+              } else if (
+                audioTrack
+              ) {
+                pc.addTrack(
+                  audioTrack,
+                  mediaStream
+                );
+              }
             }
           );
 
-          return audioStream;
-        } catch (audioError) {
+          return mediaStream;
+        } catch (cameraError) {
           console.warn(
-            "Audio failed:",
-            audioError
+            "Camera failed:",
+            cameraError
           );
 
-          setHasMedia(false);
+          /*
+            Audio fallback
+          */
 
-          setIsVideoOn(false);
+          try {
+            const audioStream =
+              await navigator.mediaDevices.getUserMedia(
+                {
+                  video: false,
+                  audio: true,
+                }
+              );
 
-          setIsMicOn(false);
+            localStreamRef.current =
+              audioStream;
 
-          toast.error(
-            "Camera/Microphone permission পাওয়া যায়নি"
-          );
+            setHasMedia(true);
+            setIsVideoOn(false);
+            setIsMicOn(true);
 
-          return null;
+            if (
+              userVideoRef.current
+            ) {
+              userVideoRef.current.srcObject =
+                audioStream;
+            }
+
+            toast(
+              "Camera পাওয়া যায়নি — microphone চালু হয়েছে",
+              {
+                icon: "🎤",
+              }
+            );
+
+            return audioStream;
+          } catch (audioError) {
+            console.warn(
+              "Audio failed:",
+              audioError
+            );
+
+            setHasMedia(false);
+            setIsVideoOn(false);
+            setIsMicOn(false);
+
+            toast.error(
+              "Camera/Microphone permission পাওয়া যায়নি"
+            );
+
+            return null;
+          }
         }
-      }
-    },
-    []
-  );
+      },
+      []
+    );
+
 
   /* =====================================================
-     SWITCH FRONT / BACK CAMERA
+     SWITCH CAMERA
   ===================================================== */
 
-  const switchCamera = async () => {
-    const newMode =
-      facingMode === "user"
-        ? "environment"
-        : "user";
+  const switchCamera =
+    async () => {
+      const newMode =
+        facingMode === "user"
+          ? "environment"
+          : "user";
 
-    const stream =
-      await startCamera(newMode);
+      const stream =
+        await startCamera(
+          newMode
+        );
 
-    if (stream) {
-      setFacingMode(newMode);
+      if (stream) {
+        setFacingMode(
+          newMode
+        );
 
-      toast.success(
-        newMode === "user"
-          ? "Front camera চালু হয়েছে"
-          : "Back camera চালু হয়েছে"
-      );
-    }
-  };
+        toast.success(
+          newMode === "user"
+            ? "Front camera চালু হয়েছে"
+            : "Back camera চালু হয়েছে"
+        );
+      }
+    };
+
 
   /* =====================================================
      INITIALIZE ROOM
@@ -491,399 +730,550 @@ export default function StudyRoomPage() {
 
     let mounted = true;
 
-    let socketInstance = null;
+    let socketInstance =
+      null;
 
-    const initRoom = async () => {
-      /*
-        1. Camera
-      */
 
-      await startCamera("user");
+    const initRoom =
+      async () => {
+        /*
+          Current user
+        */
 
-      if (!mounted) {
-        return;
-      }
+        const currentUser =
+          getCurrentUser();
 
-      /*
-        2. Socket
-      */
+        const userId =
+          currentUser?._id ||
+          currentUser?.id ||
+          `guest-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`;
 
-      socketInstance = io(
-        SOCKET_SERVER_URL,
-        {
-          transports: [
-            "websocket",
-            "polling",
-          ],
+        const userName =
+          currentUser?.name ||
+          currentUser?.fullName ||
+          currentUser?.username ||
+          "Student";
 
-          reconnection: true,
+        userInfoRef.current = {
+          userId,
+          userName,
+        };
 
-          reconnectionAttempts: 5,
 
-          reconnectionDelay: 1000,
+        /*
+          Camera
+        */
+
+        await startCamera(
+          "user"
+        );
+
+        if (!mounted) {
+          return;
         }
-      );
 
-      socketRef.current =
-        socketInstance;
 
-      /* =========================
-         CONNECT
-      ========================= */
+        /*
+          Socket
+        */
 
-      socketInstance.on(
-        "connect",
-        () => {
-          console.log(
-            "Socket connected:",
-            socketInstance.id
-          );
+        socketInstance = io(
+          SOCKET_SERVER_URL,
+          {
+            transports: [
+              "websocket",
+              "polling",
+            ],
 
-          setIsConnected(true);
+            reconnection: true,
 
-          toast.success(
-            "Study server connected"
-          );
+            reconnectionAttempts: 5,
 
-          socketInstance.emit(
-            "join-study-room",
-            roomId
-          );
-        }
-      );
+            reconnectionDelay: 1000,
 
-      /* =========================
-         CONNECT ERROR
-      ========================= */
-
-      socketInstance.on(
-        "connect_error",
-        (error) => {
-          console.error(
-            "Socket connection error:",
-            error
-          );
-
-          setIsConnected(false);
-
-          toast.error(
-            "Study server connection failed"
-          );
-        }
-      );
-
-      /* =========================
-         ROOM FULL
-      ========================= */
-
-      socketInstance.on(
-        "room-full",
-        () => {
-          setIsRoomFull(true);
-
-          toast.error(
-            "এই Study Room ইতিমধ্যে full!"
-          );
-        }
-      );
-
-      /* =========================
-         ROOM USERS
-      ========================= */
-
-      socketInstance.on(
-        "room-users",
-        ({ users }) => {
-          console.log(
-            "Existing users:",
-            users
-          );
-
-          setParticipantCount(
-            users.length + 1
-          );
-
-          /*
-            IMPORTANT:
-
-            Existing user will receive
-            user-connected and create offer.
-
-            New user waits for offer.
-          */
-        }
-      );
-
-      /* =========================
-         USER CONNECTED
-      ========================= */
-
-      socketInstance.on(
-        "user-connected",
-        async ({
-          socketId: remoteSocketId,
-        }) => {
-          console.log(
-            "New student:",
-            remoteSocketId
-          );
-
-          remoteSocketIdRef.current =
-            remoteSocketId;
-
-          setParticipantCount(2);
-
-          toast.success(
-            "নতুন একজন student যুক্ত হয়েছে!"
-          );
-
-          /*
-            Create peer
-          */
-
-          if (
-            peerConnectionRef.current
-          ) {
-            peerConnectionRef.current.close();
-          }
-
-          const pc =
-            createPeerConnection(
-              remoteSocketId,
-              socketInstance
-            );
-
-          peerConnectionRef.current =
-            pc;
-
-          /*
-            Add camera/mic
-          */
-
-          addLocalTracks(pc);
-
-          /*
-            Create offer
-          */
-
-          const offer =
-            await pc.createOffer();
-
-          await pc.setLocalDescription(
-            offer
-          );
-
-          socketInstance.emit(
-            "offer",
-            {
-              target: remoteSocketId,
-              offer,
-            }
-          );
-        }
-      );
-
-      /* =========================
-         OFFER RECEIVED
-      ========================= */
-
-      socketInstance.on(
-        "offer",
-        async ({
-          offer,
-          caller,
-        }) => {
-          console.log(
-            "Offer received"
-          );
-
-          remoteSocketIdRef.current =
-            caller;
-
-          if (
-            peerConnectionRef.current
-          ) {
-            peerConnectionRef.current.close();
-          }
-
-          const pc =
-            createPeerConnection(
-              caller,
-              socketInstance
-            );
-
-          peerConnectionRef.current =
-            pc;
-
-          /*
-            Add local tracks
-          */
-
-          addLocalTracks(pc);
-
-          /*
-            Remote description
-          */
-
-          await pc.setRemoteDescription(
-            new RTCSessionDescription(
-              offer
-            )
-          );
-
-          /*
-            Create answer
-          */
-
-          const answer =
-            await pc.createAnswer();
-
-          await pc.setLocalDescription(
-            answer
-          );
-
-          socketInstance.emit(
-            "answer",
-            {
-              target: caller,
-              answer,
-            }
-          );
-        }
-      );
-
-      /* =========================
-         ANSWER
-      ========================= */
-
-      socketInstance.on(
-        "answer",
-        async ({ answer }) => {
-          const pc =
-            peerConnectionRef.current;
-
-          if (!pc) {
-            return;
-          }
-
-          try {
-            await pc.setRemoteDescription(
-              new RTCSessionDescription(
-                answer
-              )
-            );
-          } catch (error) {
-            console.error(
-              "Answer error:",
-              error
-            );
-          }
-        }
-      );
-
-      /* =========================
-         ICE
-      ========================= */
-
-      socketInstance.on(
-        "ice-candidate",
-        async ({
-          candidate,
-        }) => {
-          const pc =
-            peerConnectionRef.current;
-
-          if (!pc || !candidate) {
-            return;
-          }
-
-          try {
-            await pc.addIceCandidate(
-              new RTCIceCandidate(
-                candidate
-              )
-            );
-          } catch (error) {
-            console.error(
-              "ICE candidate error:",
-              error
-            );
-          }
-        }
-      );
-
-      /* =========================
-         USER DISCONNECTED
-      ========================= */
-
-      socketInstance.on(
-        "user-disconnected",
-        () => {
-          toast(
-            "অন্য student room ছেড়ে চলে গেছে",
-            {
-              icon: "👋",
-            }
-          );
-
-          setParticipantCount(1);
-
-          if (
-            peerVideoRef.current
-          ) {
-            peerVideoRef.current.srcObject =
-              null;
-          }
-
-          if (
-            peerConnectionRef.current
-          ) {
-            peerConnectionRef.current.close();
-
-            peerConnectionRef.current =
-              null;
-          }
-
-          remoteSocketIdRef.current =
-            null;
-        }
-      );
-
-      /* =========================
-         ROOM COUNT
-      ========================= */
-
-      socketInstance.on(
-        "room-user-count",
-        ({ count }) => {
-          setParticipantCount(count);
-        }
-      );
-
-      /* =========================
-         CHAT
-      ========================= */
-
-      socketInstance.on(
-        "chat-message",
-        ({ sender, text }) => {
-          setMessages((previous) => [
-            ...previous,
-            {
-              sender:
-                sender || "Student",
-              text,
+            auth: {
+              userId,
+              userName,
             },
-          ]);
-        }
-      );
-    };
+          }
+        );
+
+        socketRef.current =
+          socketInstance;
+
+
+        /* =================================================
+           CONNECT
+        ================================================= */
+
+        socketInstance.on(
+          "connect",
+          () => {
+            console.log(
+              "🔌 Socket connected:",
+              socketInstance.id
+            );
+
+            setIsConnected(true);
+
+            socketInstance.emit(
+              "join-study-room",
+              roomId
+            );
+          }
+        );
+
+
+        /* =================================================
+           CONNECT ERROR
+        ================================================= */
+
+        socketInstance.on(
+          "connect_error",
+          (error) => {
+            console.error(
+              "Socket connection error:",
+              error
+            );
+
+            setIsConnected(false);
+
+            toast.error(
+              "Study server connection failed"
+            );
+          }
+        );
+
+
+        /* =================================================
+           ROOM FULL
+        ================================================= */
+
+        socketInstance.on(
+          "room-full",
+          ({ maxUsers }) => {
+            setIsRoomFull(true);
+
+            toast.error(
+              `Room full! Maximum ${maxUsers} students allowed.`
+            );
+          }
+        );
+
+
+        /* =================================================
+           ROOM ERROR
+        ================================================= */
+
+        socketInstance.on(
+          "room-error",
+          ({ message }) => {
+            toast.error(
+              message ||
+                "Could not join room"
+            );
+          }
+        );
+
+
+        /* =================================================
+           EXISTING USERS
+        ================================================= */
+
+        socketInstance.on(
+          "room-users",
+          async ({
+            users,
+            count,
+          }) => {
+            console.log(
+              "👥 Existing users:",
+              users
+            );
+
+            setParticipantCount(
+              count
+            );
+
+            /*
+              Add existing users
+              to participant map
+            */
+
+            users.forEach(
+              (user) => {
+                participantsRef.current.set(
+                  user.socketId,
+                  {
+                    socketId:
+                      user.socketId,
+                    userId:
+                      user.userId,
+                    userName:
+                      user.userName ||
+                      "Student",
+                    stream:
+                      null,
+                  }
+                );
+              }
+            );
+
+            setParticipants(
+              Array.from(
+                participantsRef.current.values()
+              )
+            );
+
+            /*
+              NEW user creates
+              offer for every
+              existing user
+            */
+
+            for (
+              const user of users
+            ) {
+              await createOfferForUser(
+                user.socketId
+              );
+            }
+          }
+        );
+
+
+        /* =================================================
+           NEW USER CONNECTED
+        ================================================= */
+
+        socketInstance.on(
+          "user-connected",
+          ({
+            socketId,
+            userId,
+            userName,
+          }) => {
+            console.log(
+              "👤 New student:",
+              userName,
+              socketId
+            );
+
+            /*
+              Existing users
+              DO NOT create offer.
+
+              New user already creates
+              offers from room-users.
+            */
+
+            participantsRef.current.set(
+              socketId,
+              {
+                socketId,
+                userId,
+                userName:
+                  userName ||
+                  "Student",
+                stream: null,
+              }
+            );
+
+            setParticipants(
+              Array.from(
+                participantsRef.current.values()
+              )
+            );
+          }
+        );
+
+
+        /* =================================================
+           OFFER
+        ================================================= */
+
+        socketInstance.on(
+          "offer",
+          async ({
+            offer,
+            caller,
+            callerUserId,
+            callerUserName,
+          }) => {
+            console.log(
+              "📨 Offer from:",
+              callerUserName
+            );
+
+            /*
+              Save participant
+            */
+
+            if (
+              !participantsRef.current.has(
+                caller
+              )
+            ) {
+              participantsRef.current.set(
+                caller,
+                {
+                  socketId:
+                    caller,
+                  userId:
+                    callerUserId,
+                  userName:
+                    callerUserName ||
+                    "Student",
+                  stream: null,
+                }
+              );
+            }
+
+            setParticipants(
+              Array.from(
+                participantsRef.current.values()
+              )
+            );
+
+
+            /*
+              Create peer
+            */
+
+            let pc =
+              peerConnectionsRef.current.get(
+                caller
+              );
+
+            if (!pc) {
+              pc =
+                createPeerConnection(
+                  caller,
+                  socketInstance
+                );
+            }
+
+
+            try {
+              /*
+                Remote description
+              */
+
+              await pc.setRemoteDescription(
+                new RTCSessionDescription(
+                  offer
+                )
+              );
+
+
+              /*
+                Answer
+              */
+
+              const answer =
+                await pc.createAnswer();
+
+              await pc.setLocalDescription(
+                answer
+              );
+
+
+              socketInstance.emit(
+                "answer",
+                {
+                  target:
+                    caller,
+                  answer,
+                }
+              );
+            } catch (error) {
+              console.error(
+                "Offer handling error:",
+                error
+              );
+            }
+          }
+        );
+
+
+        /* =================================================
+           ANSWER
+        ================================================= */
+
+        socketInstance.on(
+          "answer",
+          async ({
+            answer,
+            receiver,
+          }) => {
+            try {
+              /*
+                Receiver is our socket ID.
+                Need caller peer by sender
+                is not sent by backend.
+
+                Find peer that is waiting
+                for remote description.
+              */
+
+              let targetPc = null;
+
+              peerConnectionsRef.current.forEach(
+                (pc) => {
+                  if (
+                    pc.signalingState ===
+                    "have-local-offer"
+                  ) {
+                    targetPc = pc;
+                  }
+                }
+              );
+
+              if (!targetPc) {
+                return;
+              }
+
+              await targetPc.setRemoteDescription(
+                new RTCSessionDescription(
+                  answer
+                )
+              );
+            } catch (error) {
+              console.error(
+                "Answer error:",
+                error
+              );
+            }
+          }
+        );
+
+
+        /* =================================================
+           ICE
+        ================================================= */
+
+        socketInstance.on(
+          "ice-candidate",
+          async ({
+            candidate,
+            sender,
+          }) => {
+            if (!candidate) {
+              return;
+            }
+
+            const pc =
+              peerConnectionsRef.current.get(
+                sender
+              );
+
+            if (!pc) {
+              return;
+            }
+
+            try {
+              await pc.addIceCandidate(
+                new RTCIceCandidate(
+                  candidate
+                )
+              );
+            } catch (error) {
+              console.error(
+                "ICE error:",
+                error
+              );
+            }
+          }
+        );
+
+
+        /* =================================================
+           USER DISCONNECTED
+        ================================================= */
+
+        socketInstance.on(
+          "user-disconnected",
+          ({
+            socketId,
+            userName,
+          }) => {
+            console.log(
+              "👋 User left:",
+              userName
+            );
+
+            closePeerConnection(
+              socketId
+            );
+
+            participantsRef.current.delete(
+              socketId
+            );
+
+            setParticipants(
+              Array.from(
+                participantsRef.current.values()
+              )
+            );
+
+            toast(
+              `${userName || "Student"} room ছেড়ে গেছে`,
+              {
+                icon: "👋",
+              }
+            );
+          }
+        );
+
+
+        /* =================================================
+           ROOM COUNT
+        ================================================= */
+
+        socketInstance.on(
+          "room-user-count",
+          ({ count }) => {
+            setParticipantCount(
+              count
+            );
+          }
+        );
+
+
+        /* =================================================
+           CHAT
+        ================================================= */
+
+        socketInstance.on(
+          "chat-message",
+          ({
+            sender,
+            text,
+          }) => {
+            setMessages(
+              (previous) => [
+                ...previous,
+                {
+                  sender:
+                    sender ||
+                    "Student",
+                  text,
+                },
+              ]
+            );
+          }
+        );
+      };
+
 
     initRoom();
 
-    /* =========================
+
+    /* =====================================================
        CLEANUP
-    ========================= */
+    ===================================================== */
 
     return () => {
       mounted = false;
@@ -896,55 +1286,61 @@ export default function StudyRoomPage() {
         socketInstance.disconnect();
       }
 
-      if (
-        peerConnectionRef.current
-      ) {
-        peerConnectionRef.current.close();
+      /*
+        Close every peer
+      */
 
-        peerConnectionRef.current =
-          null;
-      }
+      peerConnectionsRef.current.forEach(
+        (pc) => {
+          pc.close();
+        }
+      );
+
+      peerConnectionsRef.current.clear();
+
+      participantsRef.current.clear();
+
+      videoRefs.current.clear();
 
       stopLocalStream();
-
-      if (peerVideoRef.current) {
-        peerVideoRef.current.srcObject =
-          null;
-      }
     };
   }, [
     roomId,
     startCamera,
     createPeerConnection,
-    addLocalTracks,
+    createOfferForUser,
+    closePeerConnection,
     stopLocalStream,
   ]);
+
 
   /* =====================================================
      COPY ROOM ID
   ===================================================== */
 
-  const handleCopyRoomId = async () => {
-    try {
-      await navigator.clipboard.writeText(
-        roomId
-      );
+  const handleCopyRoomId =
+    async () => {
+      try {
+        await navigator.clipboard.writeText(
+          roomId
+        );
 
-      setCopied(true);
+        setCopied(true);
 
-      toast.success(
-        "Room ID কপি করা হয়েছে!"
-      );
+        toast.success(
+          "Room ID কপি করা হয়েছে!"
+        );
 
-      setTimeout(() => {
-        setCopied(false);
-      }, 2000);
-    } catch (error) {
-      toast.error(
-        "Room ID copy করা যায়নি"
-      );
-    }
-  };
+        setTimeout(() => {
+          setCopied(false);
+        }, 2000);
+      } catch (error) {
+        toast.error(
+          "Room ID copy করা যায়নি"
+        );
+      }
+    };
+
 
   /* =====================================================
      MIC
@@ -965,12 +1361,17 @@ export default function StudyRoomPage() {
       return;
     }
 
-    const newState = !isMicOn;
+    const newState =
+      !isMicOn;
 
-    audioTrack.enabled = newState;
+    audioTrack.enabled =
+      newState;
 
-    setIsMicOn(newState);
+    setIsMicOn(
+      newState
+    );
   };
+
 
   /* =====================================================
      VIDEO
@@ -991,69 +1392,86 @@ export default function StudyRoomPage() {
       return;
     }
 
-    const newState = !isVideoOn;
+    const newState =
+      !isVideoOn;
 
-    videoTrack.enabled = newState;
+    videoTrack.enabled =
+      newState;
 
-    setIsVideoOn(newState);
+    setIsVideoOn(
+      newState
+    );
   };
+
 
   /* =====================================================
      CHAT
   ===================================================== */
 
-  const handleSendMessage = (event) => {
-    event.preventDefault();
+  const handleSendMessage =
+    (event) => {
+      event.preventDefault();
 
-    const message =
-      inputMsg.trim();
+      const message =
+        inputMsg.trim();
 
-    if (!message) {
-      return;
-    }
+      if (!message) {
+        return;
+      }
 
-    const socket =
-      socketRef.current;
+      const socket =
+        socketRef.current;
 
-    /*
-      নিজের chat immediately দেখাও
-    */
+      const currentUser =
+        userInfoRef.current;
 
-    setMessages((previous) => [
-      ...previous,
-      {
-        sender: "You",
-        text: message,
-      },
-    ]);
 
-    /*
-      Other student-কে পাঠাও
-    */
+      /*
+        Own message
+      */
 
-    if (
-      socket &&
-      socket.connected
-    ) {
-      socket.emit(
-        "chat-message",
-        {
-          roomId,
-          sender: "Student",
-          text: message,
-        }
+      setMessages(
+        (previous) => [
+          ...previous,
+          {
+            sender: "You",
+            text: message,
+          },
+        ]
       );
-    }
 
-    setInputMsg("");
-  };
+
+      /*
+        Send others
+      */
+
+      if (
+        socket &&
+        socket.connected
+      ) {
+        socket.emit(
+          "chat-message",
+          {
+            roomId,
+            text: message,
+            sender:
+              currentUser.userName,
+          }
+        );
+      }
+
+      setInputMsg("");
+    };
+
 
   /* =====================================================
      LEAVE
   ===================================================== */
 
   const leaveRoom = () => {
-    if (socketRef.current) {
+    if (
+      socketRef.current
+    ) {
       socketRef.current.emit(
         "leave-study-room"
       );
@@ -1061,25 +1479,31 @@ export default function StudyRoomPage() {
       socketRef.current.disconnect();
     }
 
-    if (
-      peerConnectionRef.current
-    ) {
-      peerConnectionRef.current.close();
-    }
+    peerConnectionsRef.current.forEach(
+      (pc) => {
+        pc.close();
+      }
+    );
+
+    peerConnectionsRef.current.clear();
 
     stopLocalStream();
 
-    router.push("/study-room");
+    router.push(
+      "/study-room"
+    );
   };
 
+
   /* =====================================================
-     ROOM FULL UI
+     ROOM FULL
   ===================================================== */
 
   if (isRoomFull) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4">
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl">
+
           <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-5">
             <Users className="w-8 h-8 text-rose-400" />
           </div>
@@ -1089,7 +1513,9 @@ export default function StudyRoomPage() {
           </h1>
 
           <p className="text-sm text-slate-400 mb-6">
-            এই room-এ ইতিমধ্যে ২ জন student আছে।
+            এই room-এ সর্বোচ্চ{" "}
+            {MAX_ROOM_USERS} জন
+            student থাকতে পারবে।
           </p>
 
           <button
@@ -1107,19 +1533,25 @@ export default function StudyRoomPage() {
     );
   }
 
+
   /* =====================================================
      MAIN UI
   ===================================================== */
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+
+
       {/* =================================================
           HEADER
       ================================================= */}
 
       <header className="h-16 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0">
+
         <div className="min-w-0">
+
           <div className="flex items-center gap-2">
+
             <span
               className={`w-2.5 h-2.5 rounded-full ${
                 isConnected
@@ -1134,9 +1566,9 @@ export default function StudyRoomPage() {
           </div>
 
           <div className="flex items-center gap-2 mt-1">
+
             <p className="text-[10px] text-slate-400">
-              Room ID:
-              {" "}
+              Room ID:{" "}
               <span className="text-indigo-400 font-mono font-semibold">
                 {roomId}
               </span>
@@ -1154,28 +1586,32 @@ export default function StudyRoomPage() {
                 <Copy className="w-3 h-3" />
               )}
 
-              <span>
-                {copied
-                  ? "Copied"
-                  : "Copy ID"}
-              </span>
+              {copied
+                ? "Copied"
+                : "Copy ID"}
             </button>
           </div>
         </div>
 
+
         <div className="flex items-center gap-2">
+
           <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-800/70 border border-slate-700 px-2.5 py-1.5 rounded-lg">
+
             {isConnected ? (
               <Wifi className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-rose-400" />
             )}
 
-            {participantCount}/2
+            {participantCount}/
+            {MAX_ROOM_USERS}
           </div>
 
           <button
-            onClick={leaveRoom}
+            onClick={
+              leaveRoom
+            }
             className="px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-semibold hover:bg-rose-500/20 transition flex items-center gap-1.5"
           >
             <PhoneOff className="w-3.5 h-3.5" />
@@ -1184,21 +1620,34 @@ export default function StudyRoomPage() {
         </div>
       </header>
 
+
       {/* =================================================
           MAIN
       ================================================= */}
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 p-4 sm:p-6 gap-4 overflow-auto">
+      <div className="flex-1 p-4 sm:p-6 overflow-auto">
+
         {/* =================================================
-            VIDEOS
+            VIDEO GRID
         ================================================= */}
 
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div
+          className={`grid gap-4 ${
+            participants.length + 1 <= 2
+              ? "grid-cols-1 md:grid-cols-2"
+              : participants.length + 1 <= 4
+              ? "grid-cols-1 sm:grid-cols-2"
+              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          }`}
+        >
+
+
           {/* =================================================
               MY VIDEO
           ================================================= */}
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center min-h-[250px]">
+          <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl relative overflow-hidden min-h-[230px]">
+
             {hasMedia &&
             isVideoOn ? (
               <video
@@ -1214,76 +1663,95 @@ export default function StudyRoomPage() {
                 }`}
               />
             ) : (
-              <div className="text-center text-slate-500">
-                <VideoOff className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                <div className="text-center text-slate-500">
+                  <VideoOff className="w-10 h-10 mx-auto mb-2 opacity-50" />
 
-                <p className="text-xs">
-                  Camera Off
-                </p>
+                  <p className="text-xs">
+                    Camera Off
+                  </p>
+                </div>
               </div>
             )}
 
             <div className="absolute top-3 left-3 z-20">
-              <span className="text-[10px] font-semibold text-white bg-slate-950/70 px-2.5 py-1 rounded-lg backdrop-blur-md">
-                You
-                {" "}
-                {hasMedia
-                  ? `(${
-                      facingMode ===
-                      "user"
-                        ? "Front"
-                        : "Back"
-                    })`
-                  : "(Chat only)"}
+
+              <span className="text-[10px] font-semibold text-white bg-indigo-600/80 px-2.5 py-1 rounded-lg backdrop-blur-md">
+
+                You ·{" "}
+                {userInfoRef.current.userName}
+
               </span>
             </div>
 
-            {!isMicOn &&
-              hasMedia && (
-                <div className="absolute top-3 right-3 z-20 bg-rose-500/20 border border-rose-500/30 p-2 rounded-lg">
-                  <MicOff className="w-3.5 h-3.5 text-rose-400" />
-                </div>
-              )}
+
+            {!isMicOn && (
+              <div className="absolute top-3 right-3 z-20 bg-rose-500/20 border border-rose-500/30 p-2 rounded-lg">
+                <MicOff className="w-3.5 h-3.5 text-rose-400" />
+              </div>
+            )}
           </div>
 
+
           {/* =================================================
-              REMOTE VIDEO
+              OTHER PARTICIPANTS
           ================================================= */}
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center min-h-[250px]">
-            <video
-              ref={peerVideoRef}
-              autoPlay
-              playsInline
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+          {participants.map(
+            (participant) => (
+              <ParticipantVideo
+                key={
+                  participant.socketId
+                }
+                participant={
+                  participant
+                }
+                videoRefs={
+                  videoRefs
+                }
+              />
+            )
+          )}
 
-            {!participantCount ||
-              participantCount === 1 ? (
+
+          {/* =================================================
+              WAITING
+          ================================================= */}
+
+          {participantCount ===
+            1 && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl min-h-[230px] flex items-center justify-center">
+
               <div className="text-center text-slate-600">
+
                 <Users className="w-10 h-10 mx-auto mb-2 opacity-50" />
 
                 <p className="text-xs">
                   Waiting for another student...
                 </p>
-              </div>
-            ) : null}
 
-            <div className="absolute top-3 left-3 z-20">
-              <span className="text-[10px] font-semibold text-white bg-slate-950/70 px-2.5 py-1 rounded-lg backdrop-blur-md">
-                Participant
-              </span>
+                <p className="text-[10px] text-slate-700 mt-1">
+                  Room can hold{" "}
+                  {MAX_ROOM_USERS}{" "}
+                  students
+                </p>
+
+              </div>
             </div>
-          </div>
+          )}
         </div>
+
 
         {/* =================================================
             CHAT
         ================================================= */}
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl flex flex-col min-h-[350px] lg:min-h-0 overflow-hidden">
+        <div className="mt-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col min-h-[300px] overflow-hidden">
+
           <div className="p-3.5 border-b border-slate-800 flex items-center justify-between">
+
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+
               <MessageSquare className="w-4 h-4 text-indigo-400" />
 
               <span>
@@ -1296,9 +1764,14 @@ export default function StudyRoomPage() {
             </span>
           </div>
 
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
+
+          <div className="flex-1 p-3 overflow-y-auto space-y-2.5 max-h-[300px]">
+
             {messages.map(
-              (message, index) => (
+              (
+                message,
+                index
+              ) => (
                 <div
                   key={`${index}-${message.text}`}
                   className={`p-2.5 rounded-xl border ${
@@ -1307,6 +1780,7 @@ export default function StudyRoomPage() {
                       : "bg-slate-950/50 border-slate-800/60"
                   }`}
                 >
+
                   <span
                     className={`font-bold block mb-0.5 text-[10px] ${
                       message.system
@@ -1320,10 +1794,12 @@ export default function StudyRoomPage() {
                   <p className="text-slate-300 text-xs leading-relaxed">
                     {message.text}
                   </p>
+
                 </div>
               )
             )}
           </div>
+
 
           <form
             onSubmit={
@@ -1331,6 +1807,7 @@ export default function StudyRoomPage() {
             }
             className="p-3 border-t border-slate-800 flex gap-2"
           >
+
             <input
               type="text"
               placeholder="Discuss your study..."
@@ -1348,19 +1825,22 @@ export default function StudyRoomPage() {
               disabled={
                 !inputMsg.trim()
               }
-              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white rounded-xl transition"
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl transition"
             >
               <Send className="w-4 h-4" />
             </button>
+
           </form>
         </div>
       </div>
+
 
       {/* =================================================
           CONTROLS
       ================================================= */}
 
       <div className="min-h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-center gap-2 sm:gap-4 px-3 py-3 shrink-0">
+
         {/* MIC */}
 
         <button
@@ -1373,11 +1853,6 @@ export default function StudyRoomPage() {
               ? "bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
               : "bg-rose-500/20 border-rose-500/30 text-rose-400"
           }`}
-          title={
-            isMicOn
-              ? "Mute"
-              : "Unmute"
-          }
         >
           {isMicOn ? (
             <Mic className="w-5 h-5" />
@@ -1385,6 +1860,7 @@ export default function StudyRoomPage() {
             <MicOff className="w-5 h-5" />
           )}
         </button>
+
 
         {/* VIDEO */}
 
@@ -1398,11 +1874,6 @@ export default function StudyRoomPage() {
               ? "bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
               : "bg-rose-500/20 border-rose-500/30 text-rose-400"
           }`}
-          title={
-            isVideoOn
-              ? "Turn camera off"
-              : "Turn camera on"
-          }
         >
           {isVideoOn ? (
             <Video className="w-5 h-5" />
@@ -1411,7 +1882,8 @@ export default function StudyRoomPage() {
           )}
         </button>
 
-        {/* SWITCH CAMERA */}
+
+        {/* CAMERA */}
 
         <button
           onClick={
@@ -1424,16 +1896,104 @@ export default function StudyRoomPage() {
           <SwitchCamera className="w-5 h-5" />
         </button>
 
+
         {/* LEAVE */}
 
         <button
-          onClick={leaveRoom}
+          onClick={
+            leaveRoom
+          }
           className="p-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white transition-all shadow-lg shadow-rose-600/30"
-          title="Leave Room"
         >
           <PhoneOff className="w-5 h-5" />
         </button>
+
       </div>
+    </div>
+  );
+}
+
+
+/* =========================================================
+   PARTICIPANT VIDEO COMPONENT
+========================================================= */
+
+function ParticipantVideo({
+  participant,
+  videoRefs,
+}) {
+  const localVideoRef =
+    useRef(null);
+
+  useEffect(() => {
+    videoRefs.current.set(
+      participant.socketId,
+      localVideoRef.current
+    );
+
+    if (
+      localVideoRef.current &&
+      participant.stream
+    ) {
+      localVideoRef.current.srcObject =
+        participant.stream;
+    }
+
+    return () => {
+      videoRefs.current.delete(
+        participant.socketId
+      );
+    };
+  }, [
+    participant.socketId,
+    participant.stream,
+    videoRefs,
+  ]);
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden min-h-[230px]">
+
+      {participant.stream ? (
+        <video
+          ref={localVideoRef}
+          autoPlay
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+
+          <div className="text-center text-slate-600">
+
+            <div className="w-14 h-14 rounded-full bg-slate-800 mx-auto flex items-center justify-center mb-3">
+
+              <Users className="w-7 h-7 opacity-50" />
+
+            </div>
+
+            <p className="text-xs">
+              Connecting...
+            </p>
+
+          </div>
+        </div>
+      )}
+
+
+      {/* NAME */}
+
+      <div className="absolute top-3 left-3 z-20">
+
+        <span className="text-[10px] font-semibold text-white bg-slate-950/75 px-2.5 py-1 rounded-lg backdrop-blur-md">
+
+          👤{" "}
+          {participant.userName ||
+            "Student"}
+
+        </span>
+
+      </div>
+
     </div>
   );
 }
