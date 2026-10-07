@@ -124,180 +124,334 @@ export default function StudyRoomPage() {
   }, []);
 
   // ২. Socket.io এবং WebRTC কানেকশন সেটআপ
-  useEffect(() => {
-    if (!roomId) return;
+  // ২. Socket.io এবং WebRTC কানেকশন সেটআপ
+useEffect(() => {
+  if (!roomId) return;
 
-    const newSocket = io("http://localhost:5000"); 
-    setSocket(newSocket);
+  const newSocket = io(
+    "https://csthub-backend-dw3l.onrender.com",
+    {
+      transports: ["websocket", "polling"],
+    }
+  );
 
-    newSocket.on("connect", () => {
-      console.log("Connected to signaling server:", newSocket.id);
-      newSocket.emit("join-room", { roomId, userName: myName });
+  setSocket(newSocket);
+
+  newSocket.on("connect", () => {
+    console.log(
+      "Connected to signaling server:",
+      newSocket.id
+    );
+
+    newSocket.emit("join-room", {
+      roomId,
+      userName: myName,
     });
+  });
 
-    // রুম ফুল হয়ে গেলে নোটিফিকেশন
-    newSocket.on("room-full", () => {
-      setRoomFullError(true);
-      playSound('leave');
-    });
+  newSocket.on("connect_error", (error) => {
+    console.error("Socket connection error:", error);
 
-    // নতুন কেউ জয়েন করলে
-    newSocket.on("user-connected", async ({ socketId, userName }) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        sender: "System",
+        text: "Server-এর সাথে কানেক্ট করা যাচ্ছে না। একটু পরে চেষ্টা করুন।",
+      },
+    ]);
+  });
+
+  // রুম ফুল
+  newSocket.on("room-full", () => {
+    setRoomFullError(true);
+    playSound("leave");
+  });
+
+  // নতুন user
+  newSocket.on(
+    "user-connected",
+    async ({ socketId, userName }) => {
       console.log("User connected:", socketId, userName);
-      playSound('join');
-      
+
+      playSound("join");
+
       setMessages((prev) => [
-        ...prev, 
-        { sender: "System", text: `${userName || "একজন নতুন মেম্বার"} রুমে জয়েন করেছে।` }
+        ...prev,
+        {
+          sender: "System",
+          text: `${userName || "একজন নতুন মেম্বার"} রুমে জয়েন করেছে।`,
+        },
       ]);
 
-      const peerConnection = createPeerConnection(socketId, userName, newSocket);
+      const peerConnection = createPeerConnection(
+        socketId,
+        userName,
+        newSocket
+      );
+
       peersRef.current[socketId] = peerConnection;
 
       try {
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, streamRef.current);
-          });
+          streamRef.current
+            .getTracks()
+            .forEach((track) => {
+              peerConnection.addTrack(
+                track,
+                streamRef.current
+              );
+            });
         }
 
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        newSocket.emit("offer", { target: socketId, offer, senderName: myName });
-      } catch (err) {
-        console.error("Error creating offer:", err);
-      }
-    });
+        const offer =
+          await peerConnection.createOffer();
 
-    // অফার রিসিভ করা এবং অ্যানসার পাঠানো
-    newSocket.on("offer", async ({ sender, offer, senderName }) => {
-      let peerConnection = peersRef.current[sender];
+        await peerConnection.setLocalDescription(
+          offer
+        );
+
+        newSocket.emit("offer", {
+          target: socketId,
+          offer,
+          senderName: myName,
+        });
+      } catch (err) {
+        console.error(
+          "Error creating offer:",
+          err
+        );
+      }
+    }
+  );
+
+  // Offer
+  newSocket.on(
+    "offer",
+    async ({
+      sender,
+      offer,
+      senderName,
+    }) => {
+      let peerConnection =
+        peersRef.current[sender];
+
       if (!peerConnection) {
-        peerConnection = createPeerConnection(sender, senderName, newSocket);
-        peersRef.current[sender] = peerConnection;
+        peerConnection =
+          createPeerConnection(
+            sender,
+            senderName,
+            newSocket
+          );
+
+        peersRef.current[sender] =
+          peerConnection;
       }
 
       try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        processPendingIceCandidates(sender, peerConnection);
+        await peerConnection.setRemoteDescription(
+          new RTCSessionDescription(offer)
+        );
+
+        await processPendingIceCandidates(
+          sender,
+          peerConnection
+        );
 
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, streamRef.current);
-          });
+          streamRef.current
+            .getTracks()
+            .forEach((track) => {
+              peerConnection.addTrack(
+                track,
+                streamRef.current
+              );
+            });
         }
 
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        newSocket.emit("answer", { target: sender, answer });
-      } catch (err) {
-        console.error("Error handling offer:", err);
-      }
-    });
+        const answer =
+          await peerConnection.createAnswer();
 
-    // অ্যানসার রিসিভ করা
-    newSocket.on("answer", async ({ sender, answer }) => {
-      const peerConnection = peersRef.current[sender];
+        await peerConnection.setLocalDescription(
+          answer
+        );
+
+        newSocket.emit("answer", {
+          target: sender,
+          answer,
+        });
+      } catch (err) {
+        console.error(
+          "Error handling offer:",
+          err
+        );
+      }
+    }
+  );
+
+  // Answer
+  newSocket.on(
+    "answer",
+    async ({ sender, answer }) => {
+      const peerConnection =
+        peersRef.current[sender];
+
       if (peerConnection) {
         try {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-          processPendingIceCandidates(sender, peerConnection);
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(answer)
+          );
+
+          await processPendingIceCandidates(
+            sender,
+            peerConnection
+          );
         } catch (err) {
-          console.error("Error handling answer:", err);
+          console.error(
+            "Error handling answer:",
+            err
+          );
         }
       }
-    });
+    }
+  );
 
-    // ICE Candidate হ্যান্ডেল করা
-    newSocket.on("ice-candidate", async ({ sender, candidate }) => {
-      const peerConnection = peersRef.current[sender];
-      const candidateObj = new RTCIceCandidate(candidate);
+  // ICE
+  newSocket.on(
+    "ice-candidate",
+    async ({
+      sender,
+      candidate,
+    }) => {
+      const peerConnection =
+        peersRef.current[sender];
 
-      if (peerConnection && peerConnection.remoteDescription) {
+      if (!candidate) return;
+
+      const candidateObj =
+        new RTCIceCandidate(candidate);
+
+      if (
+        peerConnection &&
+        peerConnection.remoteDescription
+      ) {
         try {
-          await peerConnection.addIceCandidate(candidateObj);
+          await peerConnection.addIceCandidate(
+            candidateObj
+          );
         } catch (err) {
-          console.error("Error adding received ice candidate", err);
+          console.error(
+            "Error adding ICE candidate:",
+            err
+          );
         }
       } else {
-        if (!pendingIceCandidatesRef.current.has(sender)) {
-          pendingIceCandidatesRef.current.set(sender, []);
+        if (
+          !pendingIceCandidatesRef.current.has(
+            sender
+          )
+        ) {
+          pendingIceCandidatesRef.current.set(
+            sender,
+            []
+          );
         }
-        pendingIceCandidatesRef.current.get(sender).push(candidateObj);
-      }
-    });
 
-    // কেউ লিভ নিলে বা রুম ছেড়ে চলে গেলে
-    newSocket.on("user-disconnected", ({ socketId, userName }) => {
-      console.log("User disconnected:", socketId);
-      playSound('leave');
-      
+        pendingIceCandidatesRef.current
+          .get(sender)
+          .push(candidateObj);
+      }
+    }
+  );
+
+  // User disconnect
+  newSocket.on(
+    "user-disconnected",
+    ({ socketId, userName }) => {
+      console.log(
+        "User disconnected:",
+        socketId
+      );
+
+      playSound("leave");
+
       setMessages((prev) => [
-        ...prev, 
-        { sender: "System", text: `${userName || "একজন মেম্বার"} রুম ছেড়ে চলে গেছে।` }
+        ...prev,
+        {
+          sender: "System",
+          text: `${userName || "একজন মেম্বার"} রুম ছেড়ে চলে গেছে।`,
+        },
       ]);
 
       if (peersRef.current[socketId]) {
         peersRef.current[socketId].close();
+
         delete peersRef.current[socketId];
       }
-      setParticipants((prev) => prev.filter((p) => p.socketId !== socketId));
-      videoRefs.current.delete(socketId);
-    });
 
-    // মেম্বারের মিউট/ভিডিও স্ট্যাটাস পরিবর্তন হলে
-    newSocket.on("user-status-changed", ({ socketId, isAudioOn, isVideoOn }) => {
       setParticipants((prev) =>
-        prev.map((p) => (p.socketId === socketId ? { ...p, isAudioOn, isVideoOn } : p))
+        prev.filter(
+          (p) => p.socketId !== socketId
+        )
       );
+
+      videoRefs.current.delete(socketId);
+
+      pendingIceCandidatesRef.current.delete(
+        socketId
+      );
+    }
+  );
+
+  // User status
+  newSocket.on(
+    "user-status-changed",
+    ({
+      socketId,
+      isAudioOn,
+      isVideoOn,
+    }) => {
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.socketId === socketId
+            ? {
+                ...p,
+                isAudioOn,
+                isVideoOn,
+              }
+            : p
+        )
+      );
+    }
+  );
+
+  // Chat
+  newSocket.on(
+    "chat-message",
+    ({ sender, message }) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender,
+          text: message,
+        },
+      ]);
+    }
+  );
+
+  return () => {
+    newSocket.disconnect();
+
+    Object.values(
+      peersRef.current
+    ).forEach((pc) => {
+      pc.close();
     });
 
-    // চ্যাট ম্যাসেজ রিসিভ করা
-    newSocket.on("chat-message", ({ sender, message }) => {
-      setMessages((prev) => [...prev, { sender, text: message }]);
-    });
+    peersRef.current = {};
 
-    return () => {
-      newSocket.disconnect();
-      Object.values(peersRef.current).forEach((pc) => pc.close());
-    };
-  }, [roomId, myName]);
-
-  // PeerConnection তৈরির হেল্পার ফাংশন
-  const createPeerConnection = (socketId, userName, currentSocket) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        currentSocket.emit("ice-candidate", {
-          target: socketId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log("Received remote track from:", socketId, event.streams[0]);
-      const remoteStream = event.streams[0];
-
-      setParticipants((prev) => {
-        const existing = prev.find((p) => p.socketId === socketId);
-        if (existing) {
-          return prev.map((p) => (p.socketId === socketId ? { ...p, stream: remoteStream } : p));
-        } else {
-          return [...prev, { 
-            socketId, 
-            userName: userName || "Guest User", 
-            stream: remoteStream, 
-            isAudioOn: true, 
-            isVideoOn: true 
-          }];
-        }
-      });
-    };
-
-    return pc;
+    pendingIceCandidatesRef.current.clear();
   };
+}, [roomId, myName]);
 
   const processPendingIceCandidates = async (sender, pc) => {
     const candidates = pendingIceCandidatesRef.current.get(sender);
