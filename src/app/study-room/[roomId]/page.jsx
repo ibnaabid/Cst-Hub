@@ -309,7 +309,8 @@ export default function StudyRoomPage() {
   return (
    
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative">
-      <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40">
+      {/* <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40"> */}
+      <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
           <h1 className="text-xs sm:text-sm font-semibold text-indigo-300">রুম: {roomId}</h1>
