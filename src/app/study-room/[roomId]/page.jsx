@@ -102,26 +102,26 @@ export default function StudyRoomPage() {
   }, [facingMode]);
 
   // 🛑 ট্যাব পরিবর্তন করলে বা মিনিমাইজ করলে রিলোড ছাড়াই ক্যামেরা অটো অফ ফিক্স
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => {
-            track.stop();
-            track.enabled = false;
-          });
-        }
-        if (myVideoRef.current) {
-          myVideoRef.current.srcObject = null;
-        }
-      }
-    };
+  // useEffect(() => {
+  //   const handleVisibilityChange = () => {
+  //     if (document.hidden) {
+  //       if (streamRef.current) {
+  //         streamRef.current.getTracks().forEach((track) => {
+  //           track.stop();
+  //           track.enabled = false;
+  //         });
+  //       }
+  //       if (myVideoRef.current) {
+  //         myVideoRef.current.srcObject = null;
+  //       }
+  //     }
+  //   };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
+  //   document.addEventListener("visibilitychange", handleVisibilityChange);
+  //   return () => {
+  //     document.removeEventListener("visibilitychange", handleVisibilityChange);
+  //   };
+  // }, []);
 
   // ২. Socket.io এবং WebRTC কানেকশন সেটআপ
   // ২. Socket.io এবং WebRTC কানেকশন সেটআপ
