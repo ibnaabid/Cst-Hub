@@ -75,15 +75,15 @@ export default function StudyRoomPage() {
      STATE
   ===================================================== */
 
-  const [isMicOn, setIsMicOn] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(false);
+  const [isMicOn, setIsMicOn] = useState(true);
+  const [isVideoOn, setIsVideoOn] = useState(true);
   const [facingMode, setFacingMode] = useState("user");
   const [isConnected, setIsConnected] = useState(false);
   const [hasMedia, setHasMedia] = useState(false);
   const [participantCount, setParticipantCount] = useState(1);
   const [copied, setCopied] = useState(false);
   const [isRoomFull, setIsRoomFull] = useState(false);
-  const [participants, setParticipants] = useState();
+  const [participants, setParticipants] = useState([]);
   const [messages, setMessages] = useState([
     {
       sender: "System",
@@ -110,6 +110,14 @@ export default function StudyRoomPage() {
     userId: "",
     userName: "Student",
   });
+
+  /* Read URL query safely without useSearchParams.
+     This avoids the production Suspense/CSR bailout issue in Next.js. */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setTopic(params.get("topic") || "General Discussion");
+    setSubject(params.get("subject") || "Study Session");
+  }, []);
 
   /* =====================================================
      GET CURRENT USER
@@ -354,6 +362,28 @@ export default function StudyRoomPage() {
         }
       });
 
+      // If peers already exist, renegotiate so newly-added media tracks
+      // are actually sent to the other students.
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        for (const remoteSocketId of peerConnectionsRef.current.keys()) {
+          try {
+            const pc = peerConnectionsRef.current.get(remoteSocketId);
+            if (!pc) continue;
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            socket.emit("offer", {
+              target: remoteSocketId,
+              offer,
+            });
+          } catch (offerError) {
+            console.warn("Media renegotiation error:", offerError);
+          }
+        }
+      }
+
       toast.success("ক্যামেরা ও মাইক্রোফোন চালু হয়েছে");
       return mediaStream;
     } catch (cameraError) {
@@ -373,6 +403,26 @@ export default function StudyRoomPage() {
 
         if (userVideoRef.current) {
           userVideoRef.current.srcObject = audioStream;
+        }
+
+        const socket = socketRef.current;
+        if (socket?.connected) {
+          for (const remoteSocketId of peerConnectionsRef.current.keys()) {
+            try {
+              const pc = peerConnectionsRef.current.get(remoteSocketId);
+              if (!pc) continue;
+
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+
+              socket.emit("offer", {
+                target: remoteSocketId,
+                offer,
+              });
+            } catch (offerError) {
+              console.warn("Audio renegotiation error:", offerError);
+            }
+          }
         }
 
         toast("ক্যামেরা পাওয়া যায়নি — শুধু মাইক্রোফোন চালু হয়েছে", {
@@ -453,8 +503,9 @@ export default function StudyRoomPage() {
 
       userInfoRef.current = { userId, userName };
 
-      // IMPORTANT: Do not request camera/microphone permission automatically.
-      // The user can join the room first and enable media from the controls.
+      // Camera/mic are NOT started automatically.
+      // User can enable them from the Camera button.
+
       if (!mounted) return;
 
       socketInstance = io(SOCKET_SERVER_URL, {
