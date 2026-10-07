@@ -307,8 +307,9 @@ export default function StudyRoomPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative">
-      <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0">
+   return (
+    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative">
+      <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
           <h1 className="text-xs sm:text-sm font-semibold text-indigo-300">রুম: {roomId}</h1>
@@ -328,9 +329,9 @@ export default function StudyRoomPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden p-3 sm:p-4 gap-4 relative">
+      <div className="flex-1 flex flex-col lg:flex-row p-3 sm:p-4 gap-4 relative">
         {/* ভিডিও গ্রিড */}
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto content-start">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
           <div className="bg-slate-900/80 border border-white/10 rounded-2xl relative overflow-hidden min-h-[220px] flex items-center justify-center shadow-xl">
             <video
               ref={myVideoRef}
@@ -356,7 +357,7 @@ export default function StudyRoomPage() {
           ))}
         </div>
 
-        {/* চ্যাট সেকশন (ডেস্কটপে সাইডবার, মোবাইলে পপআপ ড্রয়ার) */}
+        {/* চ্যাট সেকশন (ডেস্কটপে সাইডবার, মোবাইলে পপআপ ড্রয়ার) */}
         <div className={`fixed lg:relative inset-y-0 right-0 z-50 w-80 bg-slate-900/95 lg:bg-slate-900/40 border-l lg:border border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
           isChatOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
         }`}>
@@ -370,7 +371,7 @@ export default function StudyRoomPage() {
             </button>
           </div>
           
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
+          <div className="flex-1 p-3 overflow-y-auto space-y-2.5 max-h-[calc(100vh-200px)] lg:max-h-[500px]">
             {messages.map((msg, index) => (
               <div key={index} className={`p-2.5 rounded-xl border ${
                 msg.sender === "System" ? "bg-amber-500/10 border-amber-500/20 text-amber-300 text-center text-[11px]" : "bg-white/5 border-white/10"
@@ -397,7 +398,7 @@ export default function StudyRoomPage() {
       </div>
 
       {/* ফুটার কন্ট্রোল */}
-      <footer className="h-20 bg-slate-900/90 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl">
+      <footer className="h-20 bg-slate-900/90 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl sticky bottom-0 z-40">
         <button onClick={toggleMic} className={`p-3.5 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400"}`}>
           {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
         </button>
@@ -412,26 +413,6 @@ export default function StudyRoomPage() {
         </button>
       </footer>
     </div>
-  );
-}
-
-function ParticipantVideo({ participant }) {
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    if (videoRef.current && participant.stream) {
-      videoRef.current.srcObject = participant.stream;
-    }
-  }, [participant.stream]);
-
-  return (
-    <div className="bg-slate-900/80 border border-white/10 rounded-2xl relative overflow-hidden min-h-[220px] flex items-center justify-center shadow-xl">
-      <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover -scale-x-100" />
-      <div className="absolute top-3 left-3 z-20">
-        <span className="text-[10px] font-semibold text-white bg-black/50 px-2 py-1 rounded-lg backdrop-blur-md">
-          {participant.userName || "রিমোট ইউজার"}
-        </span>
-      </div>
-    </div>
+  
   );
 }
