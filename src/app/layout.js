@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "CST HUB",
-  description: "CST HUB student learning platform",
+  description: "CST Hub student learning platform",
 };
 
 export default function RootLayout({ children }) {
