@@ -33,7 +33,7 @@ export default function StudyRoomPage() {
   const peersRef = useRef({});
   const pendingIceCandidatesRef = useRef(new Map());
 
-  // Global main layout navbar hide korar effect
+  // গ্লোবাল নেভবার হাইড করার এফেক্ট
   useEffect(() => {
     const navElements = document.querySelectorAll("nav");
     navElements.forEach((nav) => {
@@ -64,11 +64,6 @@ export default function StudyRoomPage() {
         username: "openrelayproject",
         credential: "openrelayproject",
       },
-      {
-        urls: "turn:openrelay.metered.ca:443?transport=tcp",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
     ],
   };
 
@@ -89,7 +84,7 @@ export default function StudyRoomPage() {
     }
   };
 
-  // Media stream initialization
+  // মিডিয়া স্ট্রিম ইনিশিয়ালাইজেশন
   useEffect(() => {
     async function initMedia() {
       try {
@@ -112,7 +107,7 @@ export default function StudyRoomPage() {
         }
       } catch (err) {
         console.error("Camera/Mic permission denied:", err);
-        setPermissionError("Camera ba Microphone-er permission paowa jayni.");
+        setPermissionError("ক্যামেরা বা মাইক্রোফোনের পারমিশন পাওয়া যায়নি।");
       }
     }
 
@@ -172,7 +167,7 @@ export default function StudyRoomPage() {
     }
   };
 
-  // Socket.io and WebRTC signaling
+  // Socket.io এবং WebRTC সিগন্যালিং
   useEffect(() => {
     if (!roomId) return;
 
@@ -217,7 +212,7 @@ export default function StudyRoomPage() {
 
     newSocket.on("user-connected", async ({ socketId, userName }) => {
       playSound("join");
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Member"} room-e join koreche.` }]);
+      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "মেম্বার"} রুমে জয়েন করেছে।` }]);
 
       const pc = createPeerConnection(socketId, userName, newSocket);
       peersRef.current[socketId] = pc;
@@ -274,7 +269,7 @@ export default function StudyRoomPage() {
 
     newSocket.on("user-disconnected", ({ socketId, userName }) => {
       playSound("leave");
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Member"} chole geche.` }]);
+      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "মেম্বার"} চলে গেছে।` }]);
 
       if (peersRef.current[socketId]) {
         peersRef.current[socketId].close();
@@ -345,24 +340,24 @@ export default function StudyRoomPage() {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-white p-6 text-center">
         <ShieldAlert className="w-16 h-16 text-rose-500 mb-4" />
-        <h2 className="text-xl font-bold mb-2">Roomti purno</h2>
-        <button onClick={() => router.push("/")} className="px-6 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold">Home-e jan</button>
+        <h2 className="text-xl font-bold mb-2">রুমটি পূর্ণ</h2>
+        <button onClick={() => router.push("/")} className="px-6 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold">হোমে যান</button>
       </div>
     );
   }
 
   return (
     <div className="fixed inset-0 z-[1000] flex flex-col bg-slate-950 text-slate-300 overflow-hidden">
-      {/* Room Header */}
+      {/* রুম হেডার */}
       <header className="h-16 bg-slate-900/90 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
-          <h1 className="text-xs sm:text-sm font-semibold text-indigo-300">Room: {roomId}</h1>
+          <h1 className="text-xs sm:text-sm font-semibold text-indigo-300">রুম: {roomId}</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl">
             <Users className="w-4 h-4 text-indigo-400" />
-            <span>{participants.length + 1} jon</span>
+            <span>{participants.length + 1} জন</span>
           </div>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)}
@@ -373,8 +368,9 @@ export default function StudyRoomPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row p-3 sm:p-4 gap-4 relative overflow-y-auto lg:overflow-hidden pb-24 lg:pb-4">
-        {/* Video Grid */}
+      {/* মেইন কন্টেন্ট এরিয়া (ফুটার ও হেডারের মাঝখানে থাকবে এবং নিচে পর্যাপ্ত প্যাডিং থাকবে) */}
+      <div className="flex-1 flex flex-col lg:flex-row p-3 sm:p-4 gap-4 overflow-y-auto pb-28 lg:pb-6">
+        {/* ভিডিও গ্রিড */}
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
           <div className="bg-slate-900/80 border border-white/10 rounded-2xl relative overflow-hidden min-h-[220px] flex items-center justify-center shadow-xl">
             <video
@@ -386,12 +382,12 @@ export default function StudyRoomPage() {
             />
             {!isVideoOn && (
               <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center">
-                <span className="text-xs text-slate-400">Camera Off</span>
+                <span className="text-xs text-slate-400">ক্যামেরা অফ</span>
               </div>
             )}
             <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
               <span className="text-[10px] font-semibold text-white bg-black/50 px-2 py-1 rounded-lg backdrop-blur-md">
-                {myName} (Apni)
+                {myName} (আপনি)
               </span>
             </div>
           </div>
@@ -401,16 +397,16 @@ export default function StudyRoomPage() {
           ))}
         </div>
 
-        {/* Chat Drawer */}
-        <div className={`fixed inset-0 lg:relative lg:inset-auto z-[2000] lg:z-10 w-full lg:w-80 bg-slate-950/98 lg:bg-slate-900/40 border-l lg:border border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
-          isChatOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
+        {/* চ্যাট সেকশন (যাতে নিচে ফুটারের নিচে চাপা না পড়ে তার জন্য হাইট প্রপারলি ফিক্সড) */}
+        <div className={`fixed inset-y-0 right-0 z-[2000] w-full sm:w-80 bg-slate-950/98 lg:bg-slate-900/40 border-l lg:border border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
+          isChatOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0 lg:relative lg:inset-auto lg:translate-x-0"
         }`}>
-          <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
+          <div className="h-14 p-4 border-b border-white/10 flex items-center justify-between bg-white/5 shrink-0">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-indigo-400" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-200">Room Chat</h2>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-200">রুম চ্যাট</h2>
             </div>
-            <button onClick={() => setIsChatOpen(false)} className="p-2 text-slate-400 hover:text-white bg-white/5 rounded-xl">
+            <button onClick={() => setIsChatOpen(false)} className="lg:hidden p-2 text-slate-400 hover:text-white bg-white/5 rounded-xl">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -426,23 +422,24 @@ export default function StudyRoomPage() {
             ))}
           </div>
 
-          <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 flex gap-2 bg-white/5 mb-16 lg:mb-0">
+          {/* চ্যাট ইনপুট ফর্মে যাতে ফুটারের কারণে কাটা না পড়ে */}
+          <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 flex gap-2 bg-slate-900 shrink-0 mb-20 lg:mb-0">
             <input
               type="text"
               value={inputMsg}
               onChange={(e) => setInputMsg(e.target.value)}
-              placeholder="Message likhun..."
+              placeholder="মেসেজ লিখুন..."
               className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
             />
-            <button type="submit" className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg">
+            <button type="submit" className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg flex items-center justify-center">
               <Send className="w-4 h-4" />
             </button>
           </form>
         </div>
       </div>
 
-      {/* Footer Controls */}
-      <footer className="h-20 bg-slate-900/90 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl fixed bottom-0 left-0 right-0 z-[1500]">
+      {/* ফুটার কন্ট্রোল (সবসময় নিচে ফিক্সড থাকবে) */}
+      <footer className="h-20 bg-slate-900/95 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl fixed bottom-0 left-0 right-0 z-[1500]">
         <button onClick={toggleMic} className={`p-3.5 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400"}`}>
           {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
         </button>
@@ -466,7 +463,7 @@ function ParticipantVideo({ participant }) {
   useEffect(() => {
     if (videoRef.current && participant.stream) {
       videoRef.current.srcObject = participant.stream;
-      videoRef.current.play().catch((err) => console.log("Mobile video play error:", err));
+      videoRef.current.play().catch((err) => console.log("Video play error:", err));
     }
   }, [participant.stream]);
 
