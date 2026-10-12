@@ -1,8 +1,9 @@
-'use client';
+// ```jsx
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   BookOpen,
   Bell,
@@ -14,15 +15,16 @@ import {
   ShieldCheck,
   Sparkles,
   RefreshCw,
-} from 'lucide-react';
-import toast from 'react-hot-toast';
+} from "lucide-react";
+import toast from "react-hot-toast";
 
-const API_URL = 'https://csthub-backend-dw3l.onrender.com';
+const API_URL = "https://csthub-backend-dw3l.onrender.com";
 
 export default function CRDashboardPage() {
   const router = useRouter();
 
   const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const [stats, setStats] = useState({
     notesCount: 0,
@@ -34,115 +36,166 @@ export default function CRDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // ==========================================
+  // CHECK CR LOGIN
+  // ==========================================
   useEffect(() => {
     try {
-      // লগইন করার সময় যে নামে সেভ করা হয়েছে (সাধারণত 'user' অথবা 'currentUser')
       const savedUser =
-        localStorage.getItem("user") ||
         localStorage.getItem("currentUser") ||
-        sessionStorage.getItem("user") ||
-        sessionStorage.getItem("currentUser");
+        sessionStorage.getItem("currentUser") ||
+        localStorage.getItem("user") ||
+        sessionStorage.getItem("user");
 
       if (!savedUser) {
-        router.replace("/Login");
+        router.replace("/login");
         return;
       }
 
       const user = JSON.parse(savedUser);
 
-      if (String(user.role || "").toLowerCase() !== "cr") {
+      if (!user || String(user.role || "").toLowerCase() !== "cr") {
         toast.error("Access denied! CR login required.");
-        router.replace("/Login");
+        router.replace("/login");
         return;
       }
 
       setCurrentUser(user);
-      fetchDashboardData(false);
+      setAuthChecked(true);
     } catch (error) {
       console.error("CR authentication error:", error);
-      localStorage.removeItem("user");
+
       localStorage.removeItem("currentUser");
-      sessionStorage.removeItem("user");
       sessionStorage.removeItem("currentUser");
-      router.replace("/Login");
+      localStorage.removeItem("user");
+      sessionStorage.removeItem("user");
+
+      toast.error("Login information is invalid.");
+      router.replace("/login");
     }
   }, [router]);
 
   // ==========================================
-  // FETCH DASHBOARD DATA WITH AUTH TOKEN
+  // FETCH DASHBOARD DATA
   // ==========================================
+  const fetchDashboardData = useCallback(
+    async (isRefreshAction = false) => {
+      try {
+        if (isRefreshAction) {
+          setIsRefreshing(true);
+        } else {
+          setIsLoading(true);
+        }
 
-  const fetchDashboardData = async (isRefreshAction = false) => {
-    try {
-      if (isRefreshAction) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
+        const [notesRes, noticesRes, studentsRes] = await Promise.all([
+          fetch(`${API_URL}/notes`, {
+            method: "GET",
+            cache: "no-store",
+          }),
+          fetch(`${API_URL}/notices`, {
+            method: "GET",
+            cache: "no-store",
+          }),
+          fetch(`${API_URL}/students`, {
+            method: "GET",
+            cache: "no-store",
+          }),
+        ]);
+
+        if (!notesRes.ok) {
+          throw new Error(`Notes API error: ${notesRes.status}`);
+        }
+
+        if (!noticesRes.ok) {
+          throw new Error(`Notices API error: ${noticesRes.status}`);
+        }
+
+        if (!studentsRes.ok) {
+          throw new Error(`Students API error: ${studentsRes.status}`);
+        }
+
+        const [notesData, noticesData, studentsData] = await Promise.all([
+          notesRes.json(),
+          noticesRes.json(),
+          studentsRes.json(),
+        ]);
+
+        const notes = Array.isArray(notesData)
+          ? notesData
+          : Array.isArray(notesData?.notes)
+            ? notesData.notes
+            : [];
+
+        const notices = Array.isArray(noticesData)
+          ? noticesData
+          : Array.isArray(noticesData?.notices)
+            ? noticesData.notices
+            : [];
+
+        const students = Array.isArray(studentsData)
+          ? studentsData
+          : Array.isArray(studentsData?.students)
+            ? studentsData.students
+            : [];
+
+        // Newest notes first when the API supplies dates
+        const sortedNotes = [...notes].sort((a, b) => {
+          const dateA = new Date(a.createdAt || a.uploadedAt || 0).getTime();
+          const dateB = new Date(b.createdAt || b.uploadedAt || 0).getTime();
+
+          return dateB - dateA;
+        });
+
+        setRecentNotes(sortedNotes.slice(0, 5));
+
+        setStats({
+          notesCount: notes.length,
+          noticesCount: notices.length,
+          usersCount: students.length,
+        });
+
+        if (isRefreshAction) {
+          toast.success("Dashboard updated!");
+        }
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+
+        toast.error(
+          "Dashboard data load করা যায়নি। Backend API check করো।"
+        );
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
+    },
+    []
+  );
 
-      const headers = {
-        "Content-Type": "application/json",
-      };
-
-      const [notesRes, noticesRes, studentsRes] = await Promise.all([
-        fetch(`${API_URL}/notes`, { headers }),
-        fetch(`${API_URL}/notices`, { headers }),
-        fetch(`${API_URL}/students`, { headers }),
-      ]);
-
-      if (!notesRes.ok || !noticesRes.ok || !studentsRes.ok) {
-        throw new Error("Failed to fetch dashboard data");
-      }
-
-      const notesData = await notesRes.json();
-      const noticesData = await noticesRes.json();
-      const studentsData = await studentsRes.json();
-
-      const notes = Array.isArray(notesData)
-        ? notesData
-        : notesData?.notes || [];
-
-      const notices = Array.isArray(noticesData)
-        ? noticesData
-        : noticesData?.notices || [];
-
-      const students = Array.isArray(studentsData)
-        ? studentsData
-        : studentsData?.students || [];
-
-      setRecentNotes(notes.slice(0, 5));
-
-      setStats({
-        notesCount: notes.length,
-        noticesCount: notices.length,
-        usersCount: students.length,
-      });
-
-      if (isRefreshAction) {
-        toast.success("Dashboard updated!");
-      }
-    } catch (error) {
-      console.error("Failed to fetch dashboard data:", error);
-      toast.error("Dashboard data load করা যায়নি");
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+  // Load data after CR login is verified
+  useEffect(() => {
+    if (authChecked && currentUser) {
+      fetchDashboardData(false);
     }
-  };
+  }, [authChecked, currentUser, fetchDashboardData]);
 
-  // যদি currentUser এখনো লোড না হয় তবে ব্ল্যাঙ্ক বা লোডিং স্ক্রিন দেখাবে
-  if (!currentUser) {
+  // ==========================================
+  // LOADING SCREEN
+  // ==========================================
+  if (!authChecked || !currentUser) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3 text-white">
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-slate-400">Checking CR login...</p>
       </div>
     );
   }
 
+  // ==========================================
+  // DASHBOARD UI
+  // ==========================================
   return (
     <div className="min-h-screen mt-10 bg-slate-950 px-4 py-6 sm:px-6 lg:px-8 text-slate-100">
       <div className="max-w-6xl pt-5 mx-auto space-y-6 sm:space-y-8">
-
         {/* WELCOME BANNER */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -151,6 +204,7 @@ export default function CRDashboardPage() {
           className="relative overflow-hidden bg-gradient-to-r from-indigo-900/40 via-violet-900/30 to-slate-900 border border-indigo-500/20 rounded-2xl p-6 sm:p-8 shadow-xl"
         >
           <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-violet-500/5 rounded-full blur-2xl pointer-events-none" />
 
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
@@ -159,18 +213,22 @@ export default function CRDashboardPage() {
                 <ShieldCheck className="w-3.5 h-3.5" />
                 CR Control Center
               </div>
+
               <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-white">
-                Welcome back, {currentUser.name} 👋
+                Welcome back, {currentUser.name || "CR"} 👋
               </h1>
+
               <p className="text-slate-400 text-xs sm:text-sm mt-2 max-w-xl">
-                Manage your class notes, notices, and students efficiently from here.
+                Manage your class notes, notices, and students efficiently
+                from here.
               </p>
             </div>
+
             <div className="flex items-center gap-2.5">
               <span className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 shadow-sm">
-                Group:{' '}
+                Group:{" "}
                 <span className="text-indigo-400 font-bold">
-                  {currentUser.group || 'All'}
+                  {currentUser.group || "All"}
                 </span>
               </span>
             </div>
@@ -186,11 +244,14 @@ export default function CRDashboardPage() {
             className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between shadow-lg"
           >
             <div>
-              <p className="text-xs font-medium text-slate-400">Total Notes</p>
+              <p className="text-xs font-medium text-slate-400">
+                Total Notes
+              </p>
               <h3 className="text-2xl sm:text-3xl font-bold text-white mt-1">
                 {stats.notesCount}
               </h3>
             </div>
+
             <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
               <BookOpen className="w-6 h-6" />
             </div>
@@ -203,11 +264,14 @@ export default function CRDashboardPage() {
             className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between shadow-lg"
           >
             <div>
-              <p className="text-xs font-medium text-slate-400">Total Notices</p>
+              <p className="text-xs font-medium text-slate-400">
+                Total Notices
+              </p>
               <h3 className="text-2xl sm:text-3xl font-bold text-white mt-1">
                 {stats.noticesCount}
               </h3>
             </div>
+
             <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
               <Bell className="w-6 h-6" />
             </div>
@@ -220,12 +284,15 @@ export default function CRDashboardPage() {
             className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 flex items-center justify-between shadow-lg"
           >
             <div>
-              <p className="text-xs font-medium text-slate-400">Total Students</p>
+              <p className="text-xs font-medium text-slate-400">
+                Total Students
+              </p>
               <h3 className="text-2xl sm:text-3xl font-bold text-white mt-1">
                 {stats.usersCount}
               </h3>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400">
               <Users className="w-6 h-6" />
             </div>
           </motion.div>
@@ -243,52 +310,68 @@ export default function CRDashboardPage() {
               <Sparkles className="w-4 h-4 text-indigo-400" />
               Quick Actions
             </h2>
+
             <button
+              type="button"
               onClick={() => fetchDashboardData(true)}
               disabled={isRefreshing}
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all disabled:opacity-50"
               title="Refresh dashboard"
             >
               <RefreshCw
-                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
               />
             </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <motion.button
+              type="button"
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => router.push('/cr-dashboard/notes')}
+              onClick={() => router.push("/cr-dashboard/notes")}
               className="p-4 rounded-xl bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-between group transition-all"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
                   <PlusCircle className="w-5 h-5" />
                 </div>
+
                 <div className="text-left">
-                  <p className="text-sm font-semibold text-white">Publish New Note</p>
-                  <p className="text-xs text-slate-400">Upload PDF notes for students</p>
+                  <p className="text-sm font-semibold text-white">
+                    Publish New Note
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Upload PDF notes for students
+                  </p>
                 </div>
               </div>
+
               <ArrowRight className="w-4 h-4 text-indigo-400 group-hover:translate-x-1 transition-transform" />
             </motion.button>
 
             <motion.button
+              type="button"
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => router.push('/cr-dashboard/notices')}
+              onClick={() => router.push("/cr-dashboard/notices")}
               className="p-4 rounded-xl bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 flex items-center justify-between group transition-all"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center text-violet-400 group-hover:scale-110 transition-transform">
                   <Bell className="w-5 h-5" />
                 </div>
+
                 <div className="text-left">
-                  <p className="text-sm font-semibold text-white">Publish Notice</p>
-                  <p className="text-xs text-slate-400">Broadcast updates and routines</p>
+                  <p className="text-sm font-semibold text-white">
+                    Publish Notice
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Broadcast updates and routines
+                  </p>
                 </div>
               </div>
+
               <ArrowRight className="w-4 h-4 text-violet-400 group-hover:translate-x-1 transition-transform" />
             </motion.button>
           </div>
@@ -301,14 +384,16 @@ export default function CRDashboardPage() {
           transition={{ duration: 0.3, delay: 0.5 }}
           className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-6 shadow-xl"
         >
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-4 gap-3">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-indigo-400" />
               Recent Uploaded Notes
             </h2>
+
             <button
-              onClick={() => router.push('/Resources')}
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors"
+              type="button"
+              onClick={() => router.push("/Resources")}
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors shrink-0"
             >
               View All
               <ArrowRight className="w-3.5 h-3.5" />
@@ -322,37 +407,42 @@ export default function CRDashboardPage() {
           ) : recentNotes.length === 0 ? (
             <div className="py-8 text-center">
               <FileText className="w-8 h-8 text-slate-700 mx-auto" />
-              <p className="text-slate-500 text-xs mt-3">No notes uploaded yet.</p>
+              <p className="text-slate-500 text-xs mt-3">
+                No notes uploaded yet.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {recentNotes.map((note) => (
+              {recentNotes.map((note, index) => (
                 <div
-                  key={note._id}
+                  key={note._id || note.id || index}
                   className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 hover:border-slate-700 transition-all"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
                       <FileText className="w-4 h-4" />
                     </div>
+
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white truncate">
-                        {note.title || 'Untitled Note'}
+                        {note.title || "Untitled Note"}
                       </p>
+
                       <p className="text-[11px] text-slate-400 truncate">
-                        {note.subject || 'General'} • {note.semester || 'Semester'}
+                        {note.subject || "General"} •{" "}
+                        {note.semester || "Semester"}
                       </p>
                     </div>
                   </div>
+
                   <span className="px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 text-[10px] font-semibold shrink-0">
-                    {note.group || 'All'}
+                    {note.group || "All"}
                   </span>
                 </div>
               ))}
             </div>
           )}
         </motion.div>
-
       </div>
     </div>
   );
