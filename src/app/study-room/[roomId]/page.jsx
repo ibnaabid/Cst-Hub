@@ -278,7 +278,7 @@ export default function CleanStudyRoom() {
       <header className="h-14 bg-slate-900 border-b border-white/10 px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></div>
-          <span className="text-xs text-indigo-300 font-semibold">Room: {roomId}</span>
+          <span className="text-xs text-indigo-500 font-semibold">Room: {roomId}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-slate-300">
