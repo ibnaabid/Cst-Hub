@@ -34,116 +34,100 @@ export default function CRDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    const user = JSON.parse(
-      localStorage.getItem('currentUser') ||
-        sessionStorage.getItem('currentUser') ||
-        'null'
-    );
+ 
+useEffect(() => {
+  try {
+    const savedUser =
+      localStorage.getItem("currentUser") ||
+      sessionStorage.getItem("currentUser");
 
-    const token =
-      localStorage.getItem('token') ||
-      sessionStorage.getItem('token') ||
-      user?.token;
+    if (!savedUser) {
+      router.replace("/Login");
+      return;
+    }
 
-    if (!user || user.role !== 'cr' || !token) {
-      toast.error('Access denied! CR login required.');
-      router.push('/login');
+    const user = JSON.parse(savedUser);
+
+    if (String(user.role || "").toLowerCase() !== "cr") {
+      toast.error("Access denied! CR login required.");
+      router.replace("/Login");
       return;
     }
 
     setCurrentUser(user);
-    fetchDashboardData(token);
-  }, [router]);
+    fetchDashboardData();
+  } catch (error) {
+    console.error("CR authentication error:", error);
+    localStorage.removeItem("currentUser");
+    sessionStorage.removeItem("currentUser");
+    router.replace("/Login");
+  }
+}, [router]);
+
 
   // ==========================================
   // FETCH DASHBOARD DATA WITH AUTH TOKEN
   // ==========================================
 
-  const fetchDashboardData = async (tokenParam, showRefresh = false) => {
-    try {
-      if (showRefresh) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-      }
-
-      const token =
-        tokenParam ||
-        localStorage.getItem('token') ||
-        sessionStorage.getItem('token');
-
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-
-      const [notesRes, noticesRes, studentsRes] = await Promise.all([
-        fetch(`${API_URL}/notes`, { headers }),
-        fetch(`${API_URL}/notices`, { headers }),
-        fetch(`${API_URL}/students`, { headers }),
-      ]);
-
-      if (!notesRes.ok) {
-        throw new Error('Failed to fetch notes');
-      }
-
-      if (!noticesRes.ok) {
-        throw new Error('Failed to fetch notices');
-      }
-
-      if (!studentsRes.ok) {
-        throw new Error('Failed to fetch students');
-      }
-
-      const notesData = await notesRes.json();
-      const noticesData = await noticesRes.json();
-      const studentsData = await studentsRes.json();
-
-      const notes = Array.isArray(notesData)
-        ? notesData
-        : notesData?.notes || [];
-
-      const notices = Array.isArray(noticesData)
-        ? noticesData
-        : noticesData?.notices || [];
-
-      const students = Array.isArray(studentsData)
-        ? studentsData
-        : studentsData?.students || [];
-
-      setRecentNotes(notes.slice(0, 5));
-
-      setStats({
-        notesCount: notes.length,
-        noticesCount: notices.length,
-        usersCount: students.length,
-      });
-
-      if (showRefresh) {
-        toast.success('Dashboard updated!');
-      }
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-      toast.error('Dashboard data load করা যায়নি');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+  
+const fetchDashboardData = async (showRefresh = false) => {
+  try {
+    if (showRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
     }
-  };
 
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="flex flex-col items-center">
-          <div className="w-9 h-9 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-500 text-sm mt-4">
-            Checking account...
-          </p>
-        </div>
-      </div>
-    );
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    const [notesRes, noticesRes, studentsRes] = await Promise.all([
+      fetch(`${API_URL}/notes`, { headers }),
+      fetch(`${API_URL}/notices`, { headers }),
+      fetch(`${API_URL}/students`, { headers }),
+    ]);
+
+    if (!notesRes.ok || !noticesRes.ok || !studentsRes.ok) {
+      throw new Error("Failed to fetch dashboard data");
+    }
+
+    const notesData = await notesRes.json();
+    const noticesData = await noticesRes.json();
+    const studentsData = await studentsRes.json();
+
+    const notes = Array.isArray(notesData)
+      ? notesData
+      : notesData?.notes || [];
+
+    const notices = Array.isArray(noticesData)
+      ? noticesData
+      : noticesData?.notices || [];
+
+    const students = Array.isArray(studentsData)
+      ? studentsData
+      : studentsData?.students || [];
+
+    setRecentNotes(notes.slice(0, 5));
+
+    setStats({
+      notesCount: notes.length,
+      noticesCount: notices.length,
+      usersCount: students.length,
+    });
+
+    if (showRefresh) {
+      toast.success("Dashboard updated!");
+    }
+  } catch (error) {
+    console.error("Failed to fetch dashboard data:", error);
+    toast.error("Dashboard data load করা যায়নি");
+  } finally {
+    setIsLoading(false);
+    setIsRefreshing(false);
   }
+};
+
 
   return (
     <div className="min-h-screen mt-10 bg-slate-950 px-4 py-6 sm:px-6 lg:px-8 text-slate-100">
