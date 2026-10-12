@@ -25,13 +25,20 @@ export default function CleanStudyRoom() {
   const [roomFullError, setRoomFullError] = useState(false);
   
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [myName] = useState(() => "Student_" + Math.floor(100 + Math.random() * 900));
+  
+  // ডাইনামিক রিয়েল ইউজারনেম (লোকালস্টোরেজ বা ডিফল্ট থেকে নাম নেওয়া)
+  const [myName] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("userName") || localStorage.getItem("studentName");
+      if (savedUser) return savedUser;
+    }
+    return "Md Ibna Abid"; // চাইলে এখানে আপনার প্রফেশনাল নাম বা ডিফল্ট নাম থাকবে
+  });
 
   const myVideoRef = useRef(null);
   const streamRef = useRef(null);
   const peersRef = useRef({});
 
-  // ফ্রি STUN ও TURN সার্ভার কনফিগারেশন
   const ICE_SERVERS = {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
@@ -49,7 +56,6 @@ export default function CleanStudyRoom() {
     ],
   };
 
-  // মিডিয়া স্ট্রিম ইনিশিয়ালাইজেশন
   useEffect(() => {
     async function initMedia() {
       try {
@@ -70,7 +76,7 @@ export default function CleanStudyRoom() {
         }
       } catch (err) {
         console.error("Camera/Mic permission denied:", err);
-        alert("ক্যামেরা বা মাইক্রোফোনের পারমিশন পাওয়া যায়নি!");
+        alert("Camera ba Microphone-er permission paowa jayni!");
       }
     }
 
@@ -116,7 +122,6 @@ export default function CleanStudyRoom() {
     return pc;
   };
 
-  // Socket.io এবং WebRTC সিগন্যালিং
   useEffect(() => {
     if (!roomId) return;
 
@@ -137,7 +142,6 @@ export default function CleanStudyRoom() {
       setRoomFullError(true);
     });
 
-    // ফিক্সড রুম ইউজার্স ও কাউন্টার সিঙ্ক
     newSocket.on("room-users", async ({ users }) => {
       const otherUsers = users.filter((u) => u.socketId !== newSocket.id);
       
@@ -172,7 +176,7 @@ export default function CleanStudyRoom() {
     });
 
     newSocket.on("user-connected", ({ socketId, userName }) => {
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "কেউ একজন"} রুমে এসেছে।` }]);
+      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Keu ekjon"} room-e eseche.` }]);
     });
 
     newSocket.on("offer", async ({ offer, caller, callerUserName }) => {
@@ -203,7 +207,7 @@ export default function CleanStudyRoom() {
     });
 
     newSocket.on("user-disconnected", ({ socketId, userName }) => {
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "কেউ একজন"} চলে গেছে।` }]);
+      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Keu ekjon"} chole geche.` }]);
 
       if (peersRef.current[socketId]) {
         peersRef.current[socketId].close();
@@ -263,23 +267,22 @@ export default function CleanStudyRoom() {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-white p-6 text-center">
         <ShieldAlert className="w-16 h-16 text-rose-500 mb-4" />
-        <h2 className="text-xl font-bold mb-2">রুমটি পূর্ণ</h2>
-        <button onClick={() => router.push("/")} className="px-6 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold">হোমে যান</button>
+        <h2 className="text-xl font-bold mb-2">Room-ti purno</h2>
+        <button onClick={() => router.push("/")} className="px-6 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold">Home-e jan</button>
       </div>
     );
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col h-screen overflow-hidden">
-      {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-white/10 px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span className="text-xs text-indigo-300 font-semibold">রুম: {roomId}</span>
+          <span className="text-xs text-indigo-300 font-semibold">Room: {roomId}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-slate-300">
-            <Users className="w-3.5 h-3.5 text-indigo-600" /> {participants.length + 1} জন
+            <Users className="w-3.5 h-3.5 text-indigo-400" /> {participants.length + 1} jon
           </span>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)} 
@@ -290,9 +293,7 @@ export default function CleanStudyRoom() {
         </div>
       </header>
 
-      {/* Main Body */}
       <div className="flex-1 flex relative overflow-hidden pb-20">
-        {/* Videos Grid */}
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 p-3 gap-3 overflow-y-auto content-start">
           <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
             <video 
@@ -304,11 +305,11 @@ export default function CleanStudyRoom() {
             />
             {!isVideoOn && (
               <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center">
-                <span className="text-xs text-slate-400">ক্যামেরা অফ</span>
+                <span className="text-xs text-slate-400">Camera Off</span>
               </div>
             )}
             <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white">
-              {myName} (আপনি)
+              {myName} (Apni)
             </span>
           </div>
 
@@ -317,13 +318,12 @@ export default function CleanStudyRoom() {
           ))}
         </div>
 
-        {/* Mobile Friendly Compact Chat Box / Drawer */}
         <div className={`absolute lg:relative inset-y-0 right-0 z-50 w-80 sm:w-80 bg-slate-900/95 lg:bg-slate-900/40 border-l border-white/10 flex flex-col backdrop-blur-xl transition-transform duration-300 ${
           isChatOpen ? "translate-x-0 shadow-2xl" : "translate-x-full lg:translate-x-0"
         }`}>
           <div className="h-12 px-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
             <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-              <MessageSquare className="w-3.5 h-3.5" /> রুম চ্যাট
+              <MessageSquare className="w-3.5 h-3.5" /> Room Chat
             </span>
             <button onClick={() => setIsChatOpen(false)} className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg bg-white/5">
               <X className="w-4 h-4" />
@@ -346,7 +346,7 @@ export default function CleanStudyRoom() {
               type="text" 
               value={inputMsg} 
               onChange={(e) => setInputMsg(e.target.value)} 
-              placeholder="মেসেজ লিখুন..." 
+              placeholder="Message likhun..." 
               className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
             />
             <button type="submit" className="bg-indigo-600 px-3.5 py-2 rounded-xl text-white flex items-center justify-center shadow-md">
@@ -356,7 +356,6 @@ export default function CleanStudyRoom() {
         </div>
       </div>
 
-      {/* Footer Controls */}
       <footer className="h-16 bg-slate-900/95 border-t border-white/10 fixed bottom-0 left-0 right-0 flex items-center justify-center gap-3 z-40 shadow-2xl">
         <button onClick={toggleMic} className={`p-3 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400 border-rose-500/30"}`}>
           {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
@@ -368,7 +367,7 @@ export default function CleanStudyRoom() {
           <SwitchCamera className="w-4 h-4" />
         </button>
         <button onClick={leaveRoom} className="px-4 py-2.5 bg-rose-600 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-lg">
-          <PhoneOff className="w-4 h-4" /> কল কাটুন
+          <PhoneOff className="w-4 h-4" /> Kol Katun
         </button>
       </footer>
     </div>
@@ -377,16 +376,22 @@ export default function CleanStudyRoom() {
 
 function RemoteVideo({ participant }) {
   const ref = useRef(null);
+
   useEffect(() => {
     if (ref.current && participant.stream) {
       ref.current.srcObject = participant.stream;
-      ref.current.play().catch(e => console.log("Remote video play error:", e));
+      const playPromise = ref.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          console.log("Remote video play error:", error);
+        });
+      }
     }
   }, [participant.stream]);
 
   return (
     <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
-      <video ref={ref} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+      <video ref={ref} autoPlay playsInline muted={false} className="absolute inset-0 w-full h-full object-cover" />
       <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white">
         {participant.userName || "Student"}
       </span>
