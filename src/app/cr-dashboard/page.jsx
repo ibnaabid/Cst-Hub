@@ -34,100 +34,110 @@ export default function CRDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
- 
-useEffect(() => {
-  try {
-    const savedUser =
-      localStorage.getItem("currentUser") ||
-      sessionStorage.getItem("currentUser");
+  useEffect(() => {
+    try {
+      // লগইন করার সময় যে নামে সেভ করা হয়েছে (সাধারণত 'user' অথবা 'currentUser')
+      const savedUser =
+        localStorage.getItem("user") ||
+        localStorage.getItem("currentUser") ||
+        sessionStorage.getItem("user") ||
+        sessionStorage.getItem("currentUser");
 
-    if (!savedUser) {
+      if (!savedUser) {
+        router.replace("/Login");
+        return;
+      }
+
+      const user = JSON.parse(savedUser);
+
+      if (String(user.role || "").toLowerCase() !== "cr") {
+        toast.error("Access denied! CR login required.");
+        router.replace("/Login");
+        return;
+      }
+
+      setCurrentUser(user);
+      fetchDashboardData(false);
+    } catch (error) {
+      console.error("CR authentication error:", error);
+      localStorage.removeItem("user");
+      localStorage.removeItem("currentUser");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("currentUser");
       router.replace("/Login");
-      return;
     }
-
-    const user = JSON.parse(savedUser);
-
-    if (String(user.role || "").toLowerCase() !== "cr") {
-      toast.error("Access denied! CR login required.");
-      router.replace("/Login");
-      return;
-    }
-
-    setCurrentUser(user);
-    fetchDashboardData();
-  } catch (error) {
-    console.error("CR authentication error:", error);
-    localStorage.removeItem("currentUser");
-    sessionStorage.removeItem("currentUser");
-    router.replace("/Login");
-  }
-}, [router]);
-
+  }, [router]);
 
   // ==========================================
   // FETCH DASHBOARD DATA WITH AUTH TOKEN
   // ==========================================
 
-  
-const fetchDashboardData = async (showRefresh = false) => {
-  try {
-    if (showRefresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
+  const fetchDashboardData = async (isRefreshAction = false) => {
+    try {
+      if (isRefreshAction) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      const headers = {
+        "Content-Type": "application/json",
+      };
+
+      const [notesRes, noticesRes, studentsRes] = await Promise.all([
+        fetch(`${API_URL}/notes`, { headers }),
+        fetch(`${API_URL}/notices`, { headers }),
+        fetch(`${API_URL}/students`, { headers }),
+      ]);
+
+      if (!notesRes.ok || !noticesRes.ok || !studentsRes.ok) {
+        throw new Error("Failed to fetch dashboard data");
+      }
+
+      const notesData = await notesRes.json();
+      const noticesData = await noticesRes.json();
+      const studentsData = await studentsRes.json();
+
+      const notes = Array.isArray(notesData)
+        ? notesData
+        : notesData?.notes || [];
+
+      const notices = Array.isArray(noticesData)
+        ? noticesData
+        : noticesData?.notices || [];
+
+      const students = Array.isArray(studentsData)
+        ? studentsData
+        : studentsData?.students || [];
+
+      setRecentNotes(notes.slice(0, 5));
+
+      setStats({
+        notesCount: notes.length,
+        noticesCount: notices.length,
+        usersCount: students.length,
+      });
+
+      if (isRefreshAction) {
+        toast.success("Dashboard updated!");
+      }
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+      toast.error("Dashboard data load করা যায়নি");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
+  };
 
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    const [notesRes, noticesRes, studentsRes] = await Promise.all([
-      fetch(`${API_URL}/notes`, { headers }),
-      fetch(`${API_URL}/notices`, { headers }),
-      fetch(`${API_URL}/students`, { headers }),
-    ]);
-
-    if (!notesRes.ok || !noticesRes.ok || !studentsRes.ok) {
-      throw new Error("Failed to fetch dashboard data");
-    }
-
-    const notesData = await notesRes.json();
-    const noticesData = await noticesRes.json();
-    const studentsData = await studentsRes.json();
-
-    const notes = Array.isArray(notesData)
-      ? notesData
-      : notesData?.notes || [];
-
-    const notices = Array.isArray(noticesData)
-      ? noticesData
-      : noticesData?.notices || [];
-
-    const students = Array.isArray(studentsData)
-      ? studentsData
-      : studentsData?.students || [];
-
-    setRecentNotes(notes.slice(0, 5));
-
-    setStats({
-      notesCount: notes.length,
-      noticesCount: notices.length,
-      usersCount: students.length,
-    });
-
-    if (showRefresh) {
-      toast.success("Dashboard updated!");
-    }
-  } catch (error) {
-    console.error("Failed to fetch dashboard data:", error);
-    toast.error("Dashboard data load করা যায়নি");
-  } finally {
-    setIsLoading(false);
-    setIsRefreshing(false);
+  // যদি currentUser এখনো লোড না হয় তবে ব্ল্যাঙ্ক বা লোডিং স্ক্রিন দেখাবে
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
-};
-
 
   return (
     <div className="min-h-screen mt-10 bg-slate-950 px-4 py-6 sm:px-6 lg:px-8 text-slate-100">
@@ -234,7 +244,7 @@ const fetchDashboardData = async (showRefresh = false) => {
               Quick Actions
             </h2>
             <button
-              onClick={() => fetchDashboardData(null, true)}
+              onClick={() => fetchDashboardData(true)}
               disabled={isRefreshing}
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all disabled:opacity-50"
               title="Refresh dashboard"
