@@ -279,7 +279,7 @@ export default function CleanStudyRoom() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-slate-300">
-            <Users className="w-3.5 h-3.5 text-indigo-400" /> {participants.length + 1} জন
+            <Users className="w-3.5 h-3.5 text-indigo-600" /> {participants.length + 1} জন
           </span>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)} 
