@@ -26,13 +26,12 @@ export default function CleanStudyRoom() {
   
   const [isChatOpen, setIsChatOpen] = useState(false);
   
-  // ডাইনামিক রিয়েল ইউজারনেম (লোকালস্টোরেজ বা ডিফল্ট থেকে নাম নেওয়া)
   const [myName] = useState(() => {
     if (typeof window !== "undefined") {
       const savedUser = localStorage.getItem("userName") || localStorage.getItem("studentName");
       if (savedUser) return savedUser;
     }
-    return "Md Ibna Abid"; // চাইলে এখানে আপনার প্রফেশনাল নাম বা ডিফল্ট নাম থাকবে
+    return "Md Ibna Abid";
   });
 
   const myVideoRef = useRef(null);
@@ -107,16 +106,21 @@ export default function CleanStudyRoom() {
       }
     };
 
+    // Mobile media stream auto-sync fix
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0];
-      setParticipants((prev) => {
-        const existing = prev.find((p) => p.socketId === targetSocketId);
-        if (existing) {
-          return prev.map((p) => p.socketId === targetSocketId ? { ...p, stream: remoteStream } : p);
-        } else {
-          return [...prev, { socketId: targetSocketId, userName: remoteUserName, stream: remoteStream }];
-        }
-      });
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        setParticipants((prev) => {
+          const existing = prev.find((p) => p.socketId === targetSocketId);
+          if (existing) {
+            return prev.map((p) => 
+              p.socketId === targetSocketId ? { ...p, stream: remoteStream, userName: remoteUserName || p.userName } : p
+            );
+          } else {
+            return [...prev, { socketId: targetSocketId, userName: remoteUserName, stream: remoteStream }];
+          }
+        });
+      }
     };
 
     return pc;
@@ -230,16 +234,20 @@ export default function CleanStudyRoom() {
   const toggleMic = () => {
     if (streamRef.current) {
       const track = streamRef.current.getAudioTracks()[0];
-      track.enabled = !track.enabled;
-      setIsMicOn(track.enabled);
+      if (track) {
+        track.enabled = !track.enabled;
+        setIsMicOn(track.enabled);
+      }
     }
   };
 
   const toggleVideo = () => {
     if (streamRef.current) {
       const track = streamRef.current.getVideoTracks()[0];
-      track.enabled = !track.enabled;
-      setIsVideoOn(track.enabled);
+      if (track) {
+        track.enabled = !track.enabled;
+        setIsVideoOn(track.enabled);
+      }
     }
   };
 
@@ -274,11 +282,12 @@ export default function CleanStudyRoom() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col h-screen overflow-hidden">
-      <header className="h-14 bg-slate-900 border-b border-white/10 px-4 flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col h-[100dvh] overflow-hidden">
+      {/* Header */}
+      <header className="h-14 bg-slate-900 border-b border-white/10 px-4 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></div>
-          <span className="text-xs text-indigo-500 font-semibold">Room: {roomId}</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+          <span className="text-xs text-indigo-300 font-semibold">Room: {roomId}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-slate-300">
@@ -286,16 +295,18 @@ export default function CleanStudyRoom() {
           </span>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)} 
-            className="p-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded-xl lg:hidden relative"
+            className="p-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded-xl relative"
           >
             <MessageSquare className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      <div className="flex-1 flex relative overflow-hidden pb-20">
+      {/* Main Container */}
+      <div className="flex-1 flex relative overflow-hidden pb-16">
+        {/* Videos Grid */}
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 p-3 gap-3 overflow-y-auto content-start">
-          <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
+          <div className="bg-slate-900/80 rounded-2xl relative min-h-[220px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
             <video 
               ref={myVideoRef} 
               autoPlay 
@@ -308,7 +319,7 @@ export default function CleanStudyRoom() {
                 <span className="text-xs text-slate-400">Camera Off</span>
               </div>
             )}
-            <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white">
+            <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white z-10">
               {myName} (Apni)
             </span>
           </div>
@@ -318,14 +329,15 @@ export default function CleanStudyRoom() {
           ))}
         </div>
 
-        <div className={`absolute lg:relative inset-y-0 right-0 z-50 w-80 sm:w-80 bg-slate-900/95 lg:bg-slate-900/40 border-l border-white/10 flex flex-col backdrop-blur-xl transition-transform duration-300 ${
-          isChatOpen ? "translate-x-0 shadow-2xl" : "translate-x-full lg:translate-x-0"
+        {/* Chat Drawer */}
+        <div className={`absolute lg:relative right-0 inset-y-0 z-30 w-80 bg-slate-900/95 border-l border-white/10 flex flex-col backdrop-blur-xl transition-transform duration-300 ${
+          isChatOpen ? "translate-x-0 shadow-2xl" : "translate-x-full hidden"
         }`}>
           <div className="h-12 px-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
             <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
               <MessageSquare className="w-3.5 h-3.5" /> Room Chat
             </span>
-            <button onClick={() => setIsChatOpen(false)} className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg bg-white/5">
+            <button onClick={() => setIsChatOpen(false)} className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-white/5">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -356,6 +368,7 @@ export default function CleanStudyRoom() {
         </div>
       </div>
 
+      {/* Footer Controls */}
       <footer className="h-16 bg-slate-900/95 border-t border-white/10 fixed bottom-0 left-0 right-0 flex items-center justify-center gap-3 z-40 shadow-2xl">
         <button onClick={toggleMic} className={`p-3 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400 border-rose-500/30"}`}>
           {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
@@ -374,25 +387,51 @@ export default function CleanStudyRoom() {
   );
 }
 
+// Fixed Mobile Black Screen Remote Video Component
 function RemoteVideo({ participant }) {
-  const ref = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    if (ref.current && participant.stream) {
-      ref.current.srcObject = participant.stream;
-      const playPromise = ref.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.log("Remote video play error:", error);
+    const videoElem = videoRef.current;
+    if (videoElem && participant.stream) {
+      videoElem.srcObject = participant.stream;
+
+      const attemptPlay = () => {
+        videoElem.play().catch((err) => {
+          console.warn("Autoplay blocked/failed, retrying on interaction:", err);
         });
-      }
+      };
+
+      attemptPlay();
+
+      // Mobile autoplay bypass handling
+      const handleTouch = () => {
+        if (videoElem.paused) {
+          attemptPlay();
+        }
+      };
+
+      document.addEventListener("touchstart", handleTouch, { once: true });
+      return () => {
+        document.removeEventListener("touchstart", handleTouch);
+      };
     }
   }, [participant.stream]);
 
   return (
-    <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
-      <video ref={ref} autoPlay playsInline muted={false} className="absolute inset-0 w-full h-full object-cover" />
-      <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white">
+    <div className="bg-slate-900/80 rounded-2xl relative min-h-[220px] overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        className="absolute inset-0 w-full h-full object-cover" 
+      />
+      {!participant.stream && (
+        <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center">
+          <span className="text-xs text-slate-400">Connecting video...</span>
+        </div>
+      )}
+      <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white z-10">
         {participant.userName || "Student"}
       </span>
     </div>
