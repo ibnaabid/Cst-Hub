@@ -131,7 +131,7 @@ const fetchDashboardData = async (showRefresh = false) => {
 
   return (
     <div className="min-h-screen mt-10 bg-slate-950 px-4 py-6 sm:px-6 lg:px-8 text-slate-100">
-      <div className="max-w-6xl pt-6 mx-auto space-y-6 sm:space-y-8">
+      <div className="max-w-6xl pt-5 mx-auto space-y-6 sm:space-y-8">
 
         {/* WELCOME BANNER */}
         <motion.div
