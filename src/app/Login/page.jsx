@@ -149,7 +149,7 @@ export default function LoginPage() {
             <GraduationCap className="w-7 h-7 text-indigo-400" />
           </div>
           <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
-          <p className="text-slate-600 text-sm mt-1">Sign in to CST HUB</p>
+          <p className="text-slate-600 text-sm mt-3">Sign in to CST HUB</p>
         </div>
 
         {/* Form */}
