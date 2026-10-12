@@ -8,8 +8,6 @@ import {
   SwitchCamera, Send, Users, MessageSquare, ShieldAlert, X 
 } from "lucide-react";
 
-const MAX_ROOM_LIMIT = 5;
-
 export default function StudyRoomPage() {
   const { roomId } = useParams();
   const router = useRouter();
@@ -27,15 +25,12 @@ export default function StudyRoomPage() {
   const [permissionError, setPermissionError] = useState(null);
   const [roomFullError, setRoomFullError] = useState(false);
   
-  // মোবাইল চ্যাট ওপেন/ক্লোজ করার স্টেট
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
   const [myName] = useState(() => "User_" + Math.floor(1000 + Math.random() * 9000));
 
   const myVideoRef = useRef(null);
   const streamRef = useRef(null); 
   const peersRef = useRef({});
-  const videoRefs = useRef(new Map());
   const pendingIceCandidatesRef = useRef(new Map());
 
   const ICE_SERVERS = {
@@ -62,6 +57,7 @@ export default function StudyRoomPage() {
     }
   };
 
+  // মিডিয়া স্ট্রিম ইনিশিয়ালাইজেশন
   useEffect(() => {
     async function initMedia() {
       try {
@@ -99,6 +95,12 @@ export default function StudyRoomPage() {
 
   const createPeerConnection = (targetSocketId, remoteUserName, socketInstance) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        pc.addTrack(track, streamRef.current);
+      });
+    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -138,18 +140,21 @@ export default function StudyRoomPage() {
     }
   };
 
+  // Socket.io এবং WebRTC সিগন্যালিং
   useEffect(() => {
     if (!roomId) return;
 
-    const newSocket = io("https://csthub-backend-dw3l.onrender.com", {
+    const backendUrl = "https://csthub-backend-dw3l.onrender.com"; 
+    const newSocket = io(backendUrl, {
+      auth: { userName: myName },
       transports: ["websocket", "polling"],
     });
 
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
-      console.log("Connected:", newSocket.id);
-      newSocket.emit("join-room", { roomId, userName: myName });
+      console.log("Connected to socket:", newSocket.id);
+      newSocket.emit("join-study-room", roomId);
     });
 
     newSocket.on("room-full", () => {
@@ -157,60 +162,59 @@ export default function StudyRoomPage() {
       playSound("leave");
     });
 
-    newSocket.on("user-connected", async ({ socketId, userName }) => {
+    newSocket.on("room-users", async ({ users }) => {
+      for (const user of users) {
+        const { socketId, userName } = user;
+        if (socketId === newSocket.id) continue;
+
+        const pc = createPeerConnection(socketId, userName, newSocket);
+        peersRef.current[socketId] = pc;
+
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          newSocket.emit("offer", { target: socketId, offer });
+        } catch (err) {
+          console.error("Error creating offer:", err);
+        }
+      }
+    });
+
+    newSocket.on("user-connected", (participant) => {
       playSound("join");
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "মেম্বার"} রুমে জয়েন করেছে।` }]);
-
-      const peerConnection = createPeerConnection(socketId, userName, newSocket);
-      peersRef.current[socketId] = peerConnection;
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => {
-          peerConnection.addTrack(track, streamRef.current);
-        });
-      }
-
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      newSocket.emit("offer", { target: socketId, offer, senderName: myName });
+      setMessages((prev) => [...prev, { sender: "System", text: `${participant.userName || "মেম্বার"} রুমে জয়েন করেছে।` }]);
     });
 
-    newSocket.on("offer", async ({ sender, offer, senderName }) => {
-      let peerConnection = peersRef.current[sender];
-      if (!peerConnection) {
-        peerConnection = createPeerConnection(sender, senderName, newSocket);
-        peersRef.current[sender] = peerConnection;
+    newSocket.on("offer", async ({ offer, caller, callerUserName }) => {
+      let pc = peersRef.current[caller];
+      if (!pc) {
+        pc = createPeerConnection(caller, callerUserName, newSocket);
+        peersRef.current[caller] = pc;
       }
 
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      await processPendingIceCandidates(sender, peerConnection);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      await processPendingIceCandidates(caller, pc);
 
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => {
-          peerConnection.addTrack(track, streamRef.current);
-        });
-      }
-
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      newSocket.emit("answer", { target: sender, answer });
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      newSocket.emit("answer", { target: caller, answer });
     });
 
-    newSocket.on("answer", async ({ sender, answer }) => {
-      const peerConnection = peersRef.current[sender];
-      if (peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        await processPendingIceCandidates(sender, peerConnection);
+    newSocket.on("answer", async ({ answer, responder }) => {
+      const pc = peersRef.current[responder];
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        await processPendingIceCandidates(responder, pc);
       }
     });
 
-    newSocket.on("ice-candidate", async ({ sender, candidate }) => {
-      const peerConnection = peersRef.current[sender];
+    newSocket.on("ice-candidate", async ({ candidate, sender }) => {
+      const pc = peersRef.current[sender];
       if (!candidate) return;
 
       const candidateObj = new RTCIceCandidate(candidate);
-      if (peerConnection && peerConnection.remoteDescription) {
-        await peerConnection.addIceCandidate(candidateObj);
+      if (pc && pc.remoteDescription) {
+        await pc.addIceCandidate(candidateObj);
       } else {
         if (!pendingIceCandidatesRef.current.has(sender)) {
           pendingIceCandidatesRef.current.set(sender, []);
@@ -231,14 +235,8 @@ export default function StudyRoomPage() {
       setParticipants((prev) => prev.filter((p) => p.socketId !== socketId));
     });
 
-    newSocket.on("user-status-changed", ({ socketId, isAudioOn, isVideoOn }) => {
-      setParticipants((prev) =>
-        prev.map((p) => p.socketId === socketId ? { ...p, isAudioOn, isVideoOn } : p)
-      );
-    });
-
-    newSocket.on("chat-message", ({ sender, message }) => {
-      setMessages((prev) => [...prev, { sender, text: message }]);
+    newSocket.on("chat-message", ({ sender, text }) => {
+      setMessages((prev) => [...prev, { sender, text }]);
     });
 
     return () => {
@@ -254,7 +252,6 @@ export default function StudyRoomPage() {
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsMicOn(audioTrack.enabled);
-        if (socket) socket.emit("toggle-status", { roomId, isAudioOn: audioTrack.enabled, isVideoOn });
       }
     }
   };
@@ -266,7 +263,6 @@ export default function StudyRoomPage() {
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         setIsVideoOn(videoTrack.enabled);
-        if (socket) socket.emit("toggle-status", { roomId, isAudioOn: isMicOn, isVideoOn: videoTrack.enabled });
       }
     }
   };
@@ -290,7 +286,7 @@ export default function StudyRoomPage() {
     if (!inputMsg.trim()) return;
     playSound('click');
 
-    const msgData = { roomId, message: inputMsg, sender: myName };
+    const msgData = { roomId, text: inputMsg };
     setMessages((prev) => [...prev, { sender: myName, text: inputMsg }]);
     if (socket) socket.emit("chat-message", msgData);
     setInputMsg("");
@@ -307,9 +303,7 @@ export default function StudyRoomPage() {
   }
 
   return (
-   
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-300 relative">
-      {/* <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40"> */}
       <header className="h-16 bg-slate-900/80 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -320,7 +314,6 @@ export default function StudyRoomPage() {
             <Users className="w-4 h-4 text-indigo-400" />
             <span>{participants.length + 1} জন</span>
           </div>
-          {/* মোবাইলের জন্য চ্যাট টগল বাটন */}
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)}
             className="p-2 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-300 lg:hidden relative"
@@ -330,7 +323,7 @@ export default function StudyRoomPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row p-3 sm:p-4 gap-4 relative">
+      <div className="flex-1 flex flex-col lg:flex-row p-3 sm:p-4 gap-4 relative pb-24 lg:pb-4">
         {/* ভিডিও গ্রিড */}
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
           <div className="bg-slate-900/80 border border-white/10 rounded-2xl relative overflow-hidden min-h-[220px] flex items-center justify-center shadow-xl">
@@ -358,8 +351,8 @@ export default function StudyRoomPage() {
           ))}
         </div>
 
-        {/* চ্যাট সেকশন (ডেস্কটপে সাইডবার, মোবাইলে পপআপ ড্রয়ার) */}
-        <div className={`fixed lg:relative inset-y-0 right-0 z-50 w-80 bg-slate-900/95 lg:bg-slate-900/40 border-l lg:border border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
+        {/* চ্যাট সেকশন (মোবাইলে ফুল স্ক্রিন ড্রয়ার এবং ফিক্সড ইনপুট বক্স) */}
+        <div className={`fixed inset-0 lg:relative lg:inset-auto z-50 w-full lg:w-80 bg-slate-900/98 lg:bg-slate-900/40 border-l lg:border border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
           isChatOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
         }`}>
           <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
@@ -367,12 +360,12 @@ export default function StudyRoomPage() {
               <MessageSquare className="w-4 h-4 text-indigo-400" />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-200">রুম চ্যাট</h2>
             </div>
-            <button onClick={() => setIsChatOpen(false)} className="lg:hidden p-1 text-slate-400 hover:text-white">
+            <button onClick={() => setIsChatOpen(false)} className="p-2 text-slate-400 hover:text-white bg-white/5 rounded-xl">
               <X className="w-5 h-5" />
             </button>
           </div>
           
-          <div className="flex-1 p-3 overflow-y-auto space-y-2.5 max-h-[calc(100vh-200px)] lg:max-h-[500px]">
+          <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
             {messages.map((msg, index) => (
               <div key={index} className={`p-2.5 rounded-xl border ${
                 msg.sender === "System" ? "bg-amber-500/10 border-amber-500/20 text-amber-300 text-center text-[11px]" : "bg-white/5 border-white/10"
@@ -383,23 +376,23 @@ export default function StudyRoomPage() {
             ))}
           </div>
 
-          <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 flex gap-2 bg-white/5">
+          <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 flex gap-2 bg-white/5 mb-16 lg:mb-0">
             <input
               type="text"
               value={inputMsg}
               onChange={(e) => setInputMsg(e.target.value)}
               placeholder="মেসেজ লিখুন..."
-              className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
             />
-            <button type="submit" className="bg-indigo-600 text-white px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg">
-              <Send className="w-3.5 h-3.5" />
+            <button type="submit" className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg">
+              <Send className="w-4 h-4" />
             </button>
           </form>
         </div>
       </div>
 
       {/* ফুটার কন্ট্রোল */}
-      <footer className="h-20 bg-slate-900/90 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl sticky bottom-0 z-40">
+      <footer className="h-20 bg-slate-900/90 border-t border-white/10 px-4 flex items-center justify-center gap-3 shrink-0 shadow-2xl fixed bottom-0 left-0 right-0 z-40">
         <button onClick={toggleMic} className={`p-3.5 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400"}`}>
           {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
         </button>
@@ -414,6 +407,31 @@ export default function StudyRoomPage() {
         </button>
       </footer>
     </div>
-  
+  );
+}
+
+function ParticipantVideo({ participant }) {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (videoRef.current && participant.stream) {
+      videoRef.current.srcObject = participant.stream;
+    }
+  }, [participant.stream]);
+
+  return (
+    <div className="bg-slate-900/80 border border-white/10 rounded-2xl relative overflow-hidden min-h-[220px] flex items-center justify-center shadow-xl">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-white bg-black/50 px-2 py-1 rounded-lg backdrop-blur-md">
+          {participant.userName || "Student"}
+        </span>
+      </div>
+    </div>
   );
 }
