@@ -1,8 +1,13 @@
+
+/* public/firebase-messaging-sw.js */
+
+/* Firebase compat SDK */
 importScripts(
-  "https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"
 );
+
 importScripts(
-  "https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"
 );
 
 firebase.initializeApp({
@@ -11,30 +16,46 @@ firebase.initializeApp({
   projectId: "cst-hub-29587",
   storageBucket: "cst-hub-29587.firebasestorage.app",
   messagingSenderId: "34807714008",
-  appId: "1:34807714008:web:c92545f2a44b19533087ad",
+  appId: "YOUR_FULL_FIREBASE_APP_ID",
 });
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  const data = payload.data || {};
-
-  return self.registration.showNotification(
-    data.title || "CST Hub",
-    {
-      body: data.body || "নতুন আপডেট এসেছে।",
-      data: { url: data.url || "/" },
-    }
-  );
-});
+/*
+  IMPORTANT:
+  Backend notification payload পাঠাচ্ছে।
+  তাই এখানে showNotification() দিয়ে আবার notification
+  দেখাবে না; এতে duplicate notification হতে পারে।
+*/
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const url = new URL(
-    event.notification.data?.url || "/",
-    self.location.origin
-  ).href;
+  const url =
+    event.notification?.data?.FCM_MSG?.data?.url ||
+    event.notification?.data?.url ||
+    "https://cst-hub.vercel.app";
 
-  event.waitUntil(clients.openWindow(url));
+  event.waitUntil(
+    (async () => {
+      const targetUrl = new URL(
+        url,
+        self.location.origin
+      ).href;
+
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+
+      for (const client of windows) {
+        if ("focus" in client) {
+          await client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+
+      return self.clients.openWindow(targetUrl);
+    })()
+  );
 });
