@@ -109,7 +109,7 @@ export default function Navbar() {
         );
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const apiUrl = process.env.NEXT_PUBLIC_BASE_URL;
       const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
 
       if (!apiUrl) {
