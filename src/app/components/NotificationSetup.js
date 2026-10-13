@@ -65,7 +65,7 @@ export default function NotificationSetup() {
       setStatus("Notification চালু হয়েছে!");
     } catch (error) {
       console.error(error);
-      setStatus(error.message || "Setup ব্যর্থ হয়েছে।");
+      setStatus(error.message || "Setup ব্যর্থ হয়েছে..");
     } finally {
       setLoading(false);
     }
