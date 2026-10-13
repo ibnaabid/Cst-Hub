@@ -1,7 +1,6 @@
 
 /* public/firebase-messaging-sw.js */
 
-/* Firebase compat SDK */
 importScripts(
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"
 );
@@ -11,37 +10,38 @@ importScripts(
 );
 
 firebase.initializeApp({
-  apiKey: "YOUR_FIREBASE_API_KEY",
+  apiKey: "AIzaSyCnfZsifD-8BxuFaDIzoeLJuYzTtFrJ4fA",
   authDomain: "cst-hub-29587.firebaseapp.com",
   projectId: "cst-hub-29587",
   storageBucket: "cst-hub-29587.firebasestorage.app",
   messagingSenderId: "34807714008",
-  appId: "YOUR_FULL_FIREBASE_APP_ID",
+  appId: "1:34807714008:web:c92545f2a44b19533087ad",
 });
 
-const messaging = firebase.messaging();
-
-/*
-  IMPORTANT:
-  Backend notification payload পাঠাচ্ছে।
-  তাই এখানে showNotification() দিয়ে আবার notification
-  দেখাবে না; এতে duplicate notification হতে পারে।
-*/
+firebase.messaging();
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const url =
+  const rawUrl =
     event.notification?.data?.FCM_MSG?.data?.url ||
     event.notification?.data?.url ||
-    "https://cst-hub.vercel.app";
+    "/";
 
   event.waitUntil(
     (async () => {
-      const targetUrl = new URL(
-        url,
-        self.location.origin
-      ).href;
+      let targetUrl;
+
+      try {
+        targetUrl = new URL(rawUrl, self.location.origin);
+
+        // Do not navigate to an external website from a push notification.
+        if (targetUrl.origin !== self.location.origin) {
+          targetUrl = new URL("/", self.location.origin);
+        }
+      } catch {
+        targetUrl = new URL("/", self.location.origin);
+      }
 
       const windows = await self.clients.matchAll({
         type: "window",
@@ -50,12 +50,12 @@ self.addEventListener("notificationclick", (event) => {
 
       for (const client of windows) {
         if ("focus" in client) {
-          await client.navigate(targetUrl);
+          await client.navigate(targetUrl.href);
           return client.focus();
         }
       }
 
-      return self.clients.openWindow(targetUrl);
+      return self.clients.openWindow(targetUrl.href);
     })()
   );
 });
