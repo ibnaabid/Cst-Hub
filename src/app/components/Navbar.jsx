@@ -23,8 +23,8 @@ import {
 
 import toast from "react-hot-toast";
 import { getToken, onMessage } from "firebase/messaging";
-import { getFCMMessaging } from "@/lib/firebase";
-
+// import { getFCMMessaging } from "@/lib/firebase";
+import { getFCMMessaging } from "../lib/firebase"; // Adjust the import path as needed
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
