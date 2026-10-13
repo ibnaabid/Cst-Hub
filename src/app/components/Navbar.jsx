@@ -1,7 +1,7 @@
-// ```jsx
+
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -17,9 +17,13 @@ import {
   Info,
   CalendarDays,
   Users,
+  Bell,
+  BellRing,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
+import { getToken, onMessage } from "firebase/messaging";
+import { getFCMMessaging } from "@/lib/firebase";
 
 export default function Navbar() {
   const router = useRouter();
@@ -28,6 +32,12 @@ export default function Navbar() {
   const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+
+  const messageUnsubscribeRef = useRef(null);
+  const notificationSetupRef = useRef(false);
 
   // ==========================================
   // LOAD USER
@@ -65,6 +75,165 @@ export default function Navbar() {
       window.removeEventListener("storage", checkUser);
     };
   }, []);
+
+  // ==========================================
+  // CLEAN UP FOREGROUND MESSAGE LISTENER
+  // ==========================================
+
+  useEffect(() => {
+    return () => {
+      if (messageUnsubscribeRef.current) {
+        messageUnsubscribeRef.current();
+        messageUnsubscribeRef.current = null;
+      }
+    };
+  }, []);
+
+  // ==========================================
+  // ENABLE NOTIFICATIONS
+  // ==========================================
+
+  const enableNotifications = async () => {
+    if (notificationLoading || notificationSetupRef.current) return;
+
+    setNotificationLoading(true);
+
+    try {
+      if (
+        typeof window === "undefined" ||
+        !("Notification" in window) ||
+        !("serviceWorker" in navigator)
+      ) {
+        throw new Error(
+          "এই browser-এ notification support নেই। Android Chrome দিয়ে চেষ্টা করো।"
+        );
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+
+      if (!apiUrl) {
+        throw new Error("NEXT_PUBLIC_API_URL পাওয়া যায়নি।");
+      }
+
+      if (!vapidKey) {
+        throw new Error("Firebase VAPID key সেট করা নেই।");
+      }
+
+      const permission = await Notification.requestPermission();
+
+      if (permission !== "granted") {
+        throw new Error(
+          "Browser settings থেকে CST Hub notification Allow করো।"
+        );
+      }
+
+      // Register the root-level service worker.
+      const registration = await navigator.serviceWorker.register(
+        "/firebase-messaging-sw.js"
+      );
+
+      await navigator.serviceWorker.ready;
+
+      const messaging = await getFCMMessaging();
+
+      if (!messaging) {
+        throw new Error(
+          "Firebase Messaging supported নয়। Firebase config পরীক্ষা করো।"
+        );
+      }
+
+      // Generate FCM token.
+      const token = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: registration,
+      });
+
+      if (!token) {
+        throw new Error("Firebase FCM token তৈরি হয়নি।");
+      }
+
+      console.log("FCM token generated successfully.");
+
+      // Register token with the backend.
+      const response = await fetch(
+        `${apiUrl.replace(/\/+$/, "")}/notifications/subscribe`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token,
+            group: user?.group || "All",
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      console.log("FCM subscribe response:", response.status, result);
+
+      if (!response.ok || result.success === false) {
+        throw new Error(
+          result.message ||
+            result.error ||
+            `Token save failed: HTTP ${response.status}`
+        );
+      }
+
+      // Register foreground listener only once.
+      if (!messageUnsubscribeRef.current) {
+        messageUnsubscribeRef.current = onMessage(
+          messaging,
+          (payload) => {
+            const title =
+              payload.data?.title ||
+              payload.notification?.title ||
+              "CST Hub";
+
+            const body =
+              payload.data?.body ||
+              payload.notification?.body ||
+              "নতুন আপডেট এসেছে।";
+
+            toast(`${title}: ${body}`);
+
+            // A page-level notification may be blocked by some browsers.
+            // The toast remains as a foreground fallback.
+            if (Notification.permission === "granted") {
+              try {
+                new Notification(title, {
+                  body,
+                  icon: "/icon.png",
+                });
+              } catch (error) {
+                console.warn(
+                  "Browser notification could not be displayed:",
+                  error
+                );
+              }
+            }
+          }
+        );
+      }
+
+      notificationSetupRef.current = true;
+      setNotificationEnabled(true);
+
+      toast.success("CST Hub notification চালু হয়েছে!");
+    } catch (error) {
+      console.error("Notification setup error:", error);
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Notification চালু করা যায়নি।"
+      );
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
 
   // ==========================================
   // LOGOUT
@@ -154,43 +323,78 @@ export default function Navbar() {
     return "relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-300 border border-transparent hover:text-white hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:shadow-[0_0_18px_rgba(99,102,241,0.12)] transition-all duration-300";
   };
 
+  // ==========================================
+  // LOGO + NOTIFICATION BUTTON
+  // ==========================================
+
+  const LogoWithNotification = () => (
+    <div className="flex items-center gap-2">
+      <Link
+        href="/"
+        className="inline-flex items-center gap-3 group"
+      >
+        <div className="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/30 group-hover:scale-105 group-hover:shadow-indigo-500/50 transition-all duration-300">
+          <GraduationCap className="w-5 h-5" />
+
+          <span className="absolute inset-0 rounded-xl bg-indigo-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+
+        <div>
+          <span className="block font-bold text-base text-white tracking-tight">
+            CST HUB
+          </span>
+
+          <span className="block text-[9px] text-indigo-400 font-semibold -mt-1 tracking-[0.18em] uppercase">
+            Dinajpur Polytechnic
+          </span>
+        </div>
+      </Link>
+
+      <button
+        type="button"
+        onClick={enableNotifications}
+        disabled={notificationLoading}
+        aria-label="Enable CST Hub notifications"
+        title={
+          notificationEnabled
+            ? "Notifications enabled"
+            : "Enable notifications"
+        }
+        className={`relative ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 ${
+          notificationEnabled
+            ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-400"
+            : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-indigo-400/50 hover:bg-indigo-500/10 hover:text-white"
+        } disabled:cursor-wait disabled:opacity-60`}
+      >
+        {notificationLoading ? (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : notificationEnabled ? (
+          <BellRing className="h-5 w-5" />
+        ) : (
+          <Bell className="h-5 w-5" />
+        )}
+
+        {notificationEnabled && (
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-slate-950" />
+        )}
+      </button>
+    </div>
+  );
+
+  // ==========================================
+  // NAVBAR UI
+  // ==========================================
+
   return (
     <nav className="fixed top-3 left-3 right-3 z-50 bg-slate-950/75 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.35)]">
-      {/* ==========================================
-          NAVBAR
-      ========================================== */}
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-[68px]">
 
-          {/* ==========================================
-              LOGO
-          ========================================== */}
+          {/* LOGO + NOTIFICATION */}
 
-          <Link
-            href="/"
-            className="inline-flex items-center gap-3 group"
-          >
-            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/30 group-hover:scale-105 group-hover:shadow-indigo-500/50 transition-all duration-300">
-              <GraduationCap className="w-5 h-5" />
+          <LogoWithNotification />
 
-              <span className="absolute inset-0 rounded-xl bg-indigo-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-
-            <div>
-              <span className="block font-bold text-base text-white tracking-tight">
-                CST HUB
-              </span>
-
-              <span className="block text-[9px] text-indigo-400 font-semibold -mt-1 tracking-[0.18em] uppercase">
-                Dinajpur Polytechnic
-              </span>
-            </div>
-          </Link>
-
-          {/* ==========================================
-              DESKTOP NAV
-          ========================================== */}
+          {/* DESKTOP NAV */}
 
           <div className="hidden md:flex items-center gap-1.5">
             {navLinks.map((link) => {
@@ -213,8 +417,6 @@ export default function Navbar() {
               );
             })}
 
-            {/* DASHBOARD */}
-
             {user && (
               <Link
                 href={dashboardLink}
@@ -233,9 +435,7 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* ==========================================
-              DESKTOP RIGHT
-          ========================================== */}
+          {/* DESKTOP RIGHT */}
 
           <div className="hidden md:flex items-center">
             {user ? (
@@ -244,6 +444,7 @@ export default function Navbar() {
                 {/* USER BUTTON */}
 
                 <button
+                  type="button"
                   onClick={() => setDropdownOpen((prev) => !prev)}
                   className="flex items-center gap-2.5 py-1.5 px-3 rounded-xl bg-slate-900/80 border border-slate-700/70 hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-[0_0_20px_rgba(99,102,241,0.12)] transition-all duration-300"
                 >
@@ -274,7 +475,6 @@ export default function Navbar() {
 
                 {dropdownOpen && (
                   <div className="absolute right-0 mt-3 w-56 bg-slate-950/95 backdrop-blur-xl border border-slate-700/70 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.5)] overflow-hidden py-1.5">
-
                     <div className="px-4 py-3 border-b border-slate-800">
                       <p className="text-[10px] text-slate-500">
                         Signed in as
@@ -304,6 +504,7 @@ export default function Navbar() {
                     </Link>
 
                     <button
+                      type="button"
                       onClick={handleLogout}
                       className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all flex items-center gap-2"
                     >
@@ -316,17 +517,12 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-
-                {/* LOGIN */}
-
                 <Link
                   href="/Login"
                   className="text-xs font-semibold px-4 py-2.5 rounded-xl text-slate-300 border border-slate-700/70 hover:text-white hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-[0_0_18px_rgba(99,102,241,0.12)] transition-all duration-300"
                 >
                   Log In
                 </Link>
-
-                {/* SIGNUP */}
 
                 <Link
                   href="/Signup"
@@ -338,13 +534,13 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* ==========================================
-              MOBILE BUTTON
-          ========================================== */}
+          {/* MOBILE MENU BUTTON */}
 
           <div className="md:hidden flex items-center">
             <button
+              type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
               className="p-2.5 rounded-xl bg-slate-900/80 text-slate-300 border border-slate-700/70 hover:border-indigo-400/40 hover:text-white hover:bg-indigo-500/10 transition-all duration-300"
             >
               {mobileMenuOpen ? (
@@ -357,13 +553,10 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* ==========================================
-          MOBILE MENU
-      ========================================== */}
+      {/* MOBILE MENU */}
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-800/80 bg-slate-950/90 backdrop-blur-xl rounded-b-2xl px-4 pt-4 pb-5">
-
           <div className="flex flex-col gap-1.5">
             {navLinks.map((link) => {
               const Icon = link.icon;
@@ -386,8 +579,6 @@ export default function Navbar() {
               );
             })}
 
-            {/* DASHBOARD */}
-
             {user && (
               <Link
                 href={dashboardLink}
@@ -400,9 +591,7 @@ export default function Navbar() {
                   <BookOpen className="w-4 h-4" />
                 )}
 
-                {user.role === "cr"
-                  ? "CR Panel"
-                  : "Dashboard"}
+                {user.role === "cr" ? "CR Panel" : "Dashboard"}
               </Link>
             )}
           </div>
@@ -412,7 +601,6 @@ export default function Navbar() {
           <div className="pt-4 mt-3 border-t border-slate-800">
             {user ? (
               <div className="space-y-3">
-
                 <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-slate-900/80 border border-slate-800">
                   <div className="w-9 h-9 rounded-lg bg-indigo-600/15 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
                     <User className="w-4 h-4" />
@@ -432,6 +620,7 @@ export default function Navbar() {
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleLogout}
                   className="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 hover:border-rose-400/30 text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                 >
@@ -442,7 +631,6 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-
                 <Link
                   href="/Login"
                   onClick={() => setMobileMenuOpen(false)}
@@ -458,7 +646,6 @@ export default function Navbar() {
                 >
                   Sign Up
                 </Link>
-
               </div>
             )}
           </div>
