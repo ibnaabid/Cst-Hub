@@ -1,10 +1,7 @@
-
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "./components/Navbar";
 import { Toaster } from "react-hot-toast";
-import OneSignalInit from "./components/NotificationSetup";
-// import OneSignalInit from "./components/OneSignalInit";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,12 +25,10 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <OneSignalInit />
-
-        <main>
+        <main className="flex min-h-screen flex-col">
           <Navbar />
           {children}
-          <Toaster />
+          <Toaster position="top-right" />
         </main>
       </body>
     </html>
