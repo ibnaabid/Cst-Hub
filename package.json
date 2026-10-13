@@ -12,6 +12,7 @@
     "@better-auth/mongo-adapter": "^1.7.7",
     "@gravity-ui/icons": "^2.22.0",
     "better-auth": "^1.7.7",
+    "firebase": "^13.0.0",
     "framer-motion": "^13.5.0",
     "lucide-react": "^1.49.0",
     "mongodb": "^7.7.0",
