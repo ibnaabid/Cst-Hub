@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { getToken, onMessage } from "firebase/messaging";
-import { getFCMMessaging } from "@/lib/firebase";
+// import { getFCMMessaging } from "@/lib/firebase";
+import { getFCMMessaging } from "../lib/firebase"; // Adjust the import path as needed 
 
 export default function NotificationSetup() {
   const [status, setStatus] = useState("");
