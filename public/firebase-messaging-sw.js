@@ -1,4 +1,3 @@
-
 /* public/firebase-messaging-sw.js */
 
 importScripts(
@@ -18,8 +17,42 @@ firebase.initializeApp({
   appId: "1:34807714008:web:c92545f2a44b19533087ad",
 });
 
-firebase.messaging();
+const messaging = firebase.messaging();
 
+// ==========================================
+// BACKGROUND MESSAGE HANDLER (ওয়েবসাইট বন্ধ থাকলে নোটিফিকেশন দেখাবে)
+// ==========================================
+messaging.onBackgroundMessage((payload) => {
+  console.log("[firebase-messaging-sw.js] Received background message: ", payload);
+
+  const title =
+    payload.notification?.title ||
+    payload.data?.title ||
+    "CST Hub";
+
+  const body =
+    payload.notification?.body ||
+    payload.data?.body ||
+    "নতুন আপডেট এসেছে।";
+
+  const url =
+    payload.data?.url ||
+    payload.notification?.click_action ||
+    "/";
+
+  const notificationOptions = {
+    body: body,
+    icon: "/favicon.ico", // প্রজেক্টের নোটিফিকেশন আইকন
+    badge: "/favicon.ico",
+    data: { url: url },
+  };
+
+  self.registration.showNotification(title, notificationOptions);
+});
+
+// ==========================================
+// NOTIFICATION CLICK HANDLER (নোটিফিকেশনে ক্লিক করলে পেজ খুলবে)
+// ==========================================
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
