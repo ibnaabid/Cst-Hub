@@ -15,8 +15,11 @@ export default function NotificationSetup({ user }) {
   const unsubscribeRef = useRef(null);
   const setupUserRef = useRef("");
 
+  const userEmail = user?.email || "";
+  const userGroup = user?.group || "All";
+  const userId = user?._id || user?.name || "user";
   const userKey = user
-    ? `${user.email || user._id || user.name || "user"}-${user.group || "All"}`
+    ? `${userEmail || userId}-${userGroup}`
     : "";
 
   const enableNotifications = useCallback(
@@ -32,7 +35,7 @@ export default function NotificationSetup({ user }) {
         return;
       }
 
-      if (!user) {
+      if (!userKey) {
         toast.error("প্রথমে CST Hub-এ login করো।");
         return;
       }
@@ -41,16 +44,18 @@ export default function NotificationSetup({ user }) {
       setLoading(true);
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim()
-          ?.replace(/\/+$/, "");
+        const baseUrl = (
+          process.env.NEXT_PUBLIC_BASE_URL || ""
+        )
+          .trim()
+          .replace(/\/+$/, "");
 
-        const vapidKey =
-          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim();
+        const vapidKey = (
+          process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || ""
+        ).trim();
 
         if (!baseUrl) {
-          throw new Error(
-            "NEXT_PUBLIC_BASE_URL সেট করা নেই। Vercel Environment Variables পরীক্ষা করো।"
-          );
+          throw new Error("NEXT_PUBLIC_BASE_URL সেট করা নেই।");
         }
 
         if (!vapidKey) {
@@ -68,7 +73,7 @@ export default function NotificationSetup({ user }) {
         if (permission !== "granted") {
           if (permission === "denied") {
             throw new Error(
-              "Browser settings থেকে CST Hub notification Allow করো।"
+              "Browser settings থেকে notification Allow করো।"
             );
           }
 
@@ -90,7 +95,7 @@ export default function NotificationSetup({ user }) {
 
         if (!messaging) {
           throw new Error(
-            "Firebase Messaging initialize হয়নি। lib/firebase.js পরীক্ষা করো।"
+            "Firebase Messaging চালু হয়নি। Firebase config পরীক্ষা করো।"
           );
         }
 
@@ -113,35 +118,33 @@ export default function NotificationSetup({ user }) {
           },
           body: JSON.stringify({
             token,
-            group: user.group || "All",
-            email: user.email || "",
+            group: userGroup,
+            email: userEmail,
           }),
         });
 
-        // Read the response as text first to avoid
-        // "Unexpected token '<'" when the server returns HTML.
         const responseText = await response.text();
+
+        console.log("Notification API:", apiUrl);
+        console.log("HTTP status:", response.status);
+        console.log(
+          "Content-Type:",
+          response.headers.get("content-type")
+        );
 
         let result;
 
         try {
           result = JSON.parse(responseText);
         } catch {
-          console.error("Invalid subscribe API response:", {
+          console.error("Invalid notification API response:", {
             url: apiUrl,
             status: response.status,
-            contentType: response.headers.get("content-type"),
             response: responseText.slice(0, 500),
           });
 
-          if (responseText.trimStart().startsWith("<")) {
-            throw new Error(
-              `API থেকে HTML এসেছে (HTTP ${response.status})। Console-এর "Invalid subscribe API response" দেখো।`
-            );
-          }
-
           throw new Error(
-            `Backend valid JSON দেয়নি (HTTP ${response.status})।`
+            `Backend valid JSON দেয়নি (HTTP ${response.status})। F12 Console দেখো।`
           );
         }
 
@@ -149,11 +152,10 @@ export default function NotificationSetup({ user }) {
           throw new Error(
             result.message ||
               result.error ||
-              `Notification subscription failed (HTTP ${response.status})`
+              `Subscribe failed (HTTP ${response.status})`
           );
         }
 
-        // Listen for foreground messages only once.
         if (!unsubscribeRef.current) {
           unsubscribeRef.current = onMessage(
             messaging,
@@ -182,6 +184,7 @@ export default function NotificationSetup({ user }) {
       } catch (error) {
         console.error("Notification setup failed:", error);
         setEnabled(false);
+        setupUserRef.current = "";
 
         toast.error(
           error instanceof Error
@@ -193,7 +196,7 @@ export default function NotificationSetup({ user }) {
         setLoading(false);
       }
     },
-    [user, userKey]
+    [userKey, userEmail, userGroup]
   );
 
   useEffect(() => {
