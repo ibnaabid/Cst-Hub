@@ -41,16 +41,22 @@ export default function NotificationSetup({ user }) {
       setLoading(true);
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.trim()
+          ?.replace(/\/+$/, "");
+
         const vapidKey =
           process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim();
 
         if (!baseUrl) {
-          throw new Error("NEXT_PUBLIC_BASE_URL সেট করা নেই।");
+          throw new Error(
+            "NEXT_PUBLIC_BASE_URL সেট করা নেই। Vercel Environment Variables পরীক্ষা করো।"
+          );
         }
 
         if (!vapidKey) {
-          throw new Error("Firebase VAPID public key সেট করা নেই।");
+          throw new Error(
+            "NEXT_PUBLIC_FIREBASE_VAPID_KEY সেট করা নেই।"
+          );
         }
 
         let permission = Notification.permission;
@@ -84,7 +90,7 @@ export default function NotificationSetup({ user }) {
 
         if (!messaging) {
           throw new Error(
-            "Firebase Messaging পাওয়া যায়নি। Firebase configuration পরীক্ষা করো।"
+            "Firebase Messaging initialize হয়নি। lib/firebase.js পরীক্ষা করো।"
           );
         }
 
@@ -97,52 +103,57 @@ export default function NotificationSetup({ user }) {
           throw new Error("Firebase FCM token তৈরি হয়নি।");
         }
 
-        const response = await fetch(
-          `${baseUrl.replace(/\/+$/, "")}/notifications/subscribe`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token,
-              group: user.group || "All",
-              email: user.email || "",
-            }),
-          }
-        );
+        const apiUrl = `${baseUrl}/notifications/subscribe`;
 
-        const contentType =
-          response.headers.get("content-type") || "";
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            token,
+            group: user.group || "All",
+            email: user.email || "",
+          }),
+        });
+
+        // Read the response as text first to avoid
+        // "Unexpected token '<'" when the server returns HTML.
         const responseText = await response.text();
 
         let result;
 
-        if (contentType.includes("application/json")) {
-          try {
-            result = JSON.parse(responseText);
-          } catch {
-            throw new Error("Backend invalid JSON পাঠাচ্ছে।");
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          console.error("Invalid subscribe API response:", {
+            url: apiUrl,
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+            response: responseText.slice(0, 500),
+          });
+
+          if (responseText.trimStart().startsWith("<")) {
+            throw new Error(
+              `API থেকে HTML এসেছে (HTTP ${response.status})। Console-এর "Invalid subscribe API response" দেখো।`
+            );
           }
-        } else {
-          console.error(
-            "Notification API response:",
-            response.status,
-            responseText.slice(0, 500)
-          );
 
           throw new Error(
-            `Backend JSON দেয়নি (HTTP ${response.status})। ` +
-            "API URL ও subscribe route পরীক্ষা করো।"
+            `Backend valid JSON দেয়নি (HTTP ${response.status})।`
           );
         }
 
-        if (!response.ok || result.success === false) {
+        if (!response.ok || result.success !== true) {
           throw new Error(
             result.message ||
-            result.error ||
-            `Subscription failed: HTTP ${response.status}`
+              result.error ||
+              `Notification subscription failed (HTTP ${response.status})`
           );
         }
 
+        // Listen for foreground messages only once.
         if (!unsubscribeRef.current) {
           unsubscribeRef.current = onMessage(
             messaging,
