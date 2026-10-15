@@ -25,7 +25,8 @@ import {
   Wifi,
 } from "lucide-react";
 
-const BACKEND_URL = "https://csthub-backend-dw3l.onrender.com";
+const BACKEND_URL =
+  "https://csthub-backend-dw3l.onrender.com";
 
 const ICE_SERVERS = {
   iceServers: [
@@ -43,35 +44,37 @@ export default function CleanStudyRoom() {
     ? params.roomId[0]
     : params?.roomId;
 
+  const [myName, setMyName] = useState("Student");
   const [participants, setParticipants] = useState([]);
   const [messages, setMessages] = useState([]);
   const [inputMsg, setInputMsg] = useState("");
-  const [myName, setMyName] = useState("Student");
 
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [facingMode, setFacingMode] = useState("user");
 
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [roomFullError, setRoomFullError] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaError, setMediaError] = useState("");
   const [connectionStatus, setConnectionStatus] =
     useState("Connecting...");
   const [isConnected, setIsConnected] = useState(false);
+  const [roomFullError, setRoomFullError] = useState(false);
 
   const myVideoRef = useRef(null);
   const streamRef = useRef(null);
   const socketRef = useRef(null);
+
   const peersRef = useRef({});
   const pendingCandidatesRef = useRef({});
-  const messageEndRef = useRef(null);
-  const mountedRef = useRef(false);
-  const joinedRef = useRef(false);
-  const leavingRef = useRef(false);
-  const makingOfferRef = useRef({});
+  const remoteStreamsRef = useRef({});
 
-  // Load the current student.
+  const messageEndRef = useRef(null);
+  const micOnRef = useRef(true);
+  const videoOnRef = useRef(true);
+  const mountedRef = useRef(false);
+
+  // Load student name.
   useEffect(() => {
     try {
       const saved =
@@ -86,9 +89,11 @@ export default function CleanStudyRoom() {
         user?.name ||
         user?.fullName;
 
-      if (name) setMyName(String(name).trim());
+      if (name?.trim()) {
+        setMyName(name.trim());
+      }
     } catch (error) {
-      console.error("Could not load student name:", error);
+      console.error("Student name error:", error);
     }
   }, []);
 
@@ -103,7 +108,7 @@ export default function CleanStudyRoom() {
     ]);
   }, []);
 
-  const attachLocalStream = useCallback(() => {
+  const attachLocalVideo = useCallback(() => {
     const video = myVideoRef.current;
     const stream = streamRef.current;
 
@@ -113,15 +118,17 @@ export default function CleanStudyRoom() {
       video.srcObject = stream;
     }
 
-    video.play().catch(() => {});
+    video.play().catch((error) => {
+      console.warn("Local video playback:", error);
+    });
   }, []);
 
-  // Start local camera/microphone once.
+  // Camera and microphone.
   useEffect(() => {
     let cancelled = false;
     let acquiredStream = null;
 
-    async function startMedia() {
+    async function startCamera() {
       setMediaLoading(true);
       setMediaError("");
 
@@ -154,16 +161,16 @@ export default function CleanStudyRoom() {
         streamRef.current = acquiredStream;
 
         acquiredStream.getAudioTracks().forEach((track) => {
-          track.enabled = isMicOn;
+          track.enabled = micOnRef.current;
         });
 
         acquiredStream.getVideoTracks().forEach((track) => {
-          track.enabled = isVideoOn;
+          track.enabled = videoOnRef.current;
         });
 
-        attachLocalStream();
+        attachLocalVideo();
 
-        // Replace existing sender tracks when switching cameras.
+        // Replace camera/microphone tracks on existing peers.
         for (const pc of Object.values(peersRef.current)) {
           if (pc.signalingState === "closed") continue;
 
@@ -179,7 +186,7 @@ export default function CleanStudyRoom() {
                 pc.addTrack(track, acquiredStream);
               }
             } catch (error) {
-              console.error("Could not replace media track:", error);
+              console.error("Track replacement failed:", error);
             }
           }
         }
@@ -188,26 +195,26 @@ export default function CleanStudyRoom() {
           oldStream.getTracks().forEach((track) => track.stop());
         }
       } catch (error) {
-        console.error("Media error:", error);
+        console.error("Camera initialization failed:", error);
 
         if (!cancelled) {
-          const message =
+          const text =
             error.name === "NotAllowedError"
-              ? "Camera ও microphone permission দিন। Browser settings-এ permission পরীক্ষা করুন।"
+              ? "Camera ও microphone permission Allow করো।"
               : error.name === "NotFoundError"
                 ? "Camera বা microphone পাওয়া যায়নি।"
                 : error.name === "NotReadableError"
-                  ? "Camera অন্য application ব্যবহার করছে। অন্য application বন্ধ করে আবার চেষ্টা করুন।"
+                  ? "Camera অন্য application ব্যবহার করছে।"
                   : error.message || "Camera চালু করা যায়নি।";
 
-          setMediaError(message);
+          setMediaError(text);
         }
       } finally {
         if (!cancelled) setMediaLoading(false);
       }
     }
 
-    startMedia();
+    startCamera();
 
     return () => {
       cancelled = true;
@@ -216,26 +223,50 @@ export default function CleanStudyRoom() {
         acquiredStream.getTracks().forEach((track) => track.stop());
       }
     };
-    // The stream is recreated only when switching cameras.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facingMode]);
+  }, [facingMode, attachLocalVideo]);
 
   useEffect(() => {
-    attachLocalStream();
-  }, [attachLocalStream, mediaLoading]);
+    attachLocalVideo();
+  }, [attachLocalVideo, mediaLoading]);
 
+  // Keep microphone state synchronized with new tracks.
   useEffect(() => {
+    micOnRef.current = isMicOn;
+
     streamRef.current?.getAudioTracks().forEach((track) => {
       track.enabled = isMicOn;
     });
   }, [isMicOn]);
 
   useEffect(() => {
+    videoOnRef.current = isVideoOn;
+
     streamRef.current?.getVideoTracks().forEach((track) => {
       track.enabled = isVideoOn;
     });
   }, [isVideoOn]);
 
+  // Apply queued ICE candidates after remote description is available.
+  const flushCandidates = useCallback(async (remoteId) => {
+    const pc = peersRef.current[remoteId];
+
+    if (!pc?.remoteDescription) return;
+
+    const queue = pendingCandidatesRef.current[remoteId] || [];
+    pendingCandidatesRef.current[remoteId] = [];
+
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(
+          new RTCIceCandidate(candidate)
+        );
+      } catch (error) {
+        console.error("Queued ICE candidate error:", error);
+      }
+    }
+  }, []);
+
+  // Create or retrieve one peer connection per participant.
   const createPeerConnection = useCallback(
     (remoteId, remoteName, socket) => {
       const existing = peersRef.current[remoteId];
@@ -247,13 +278,13 @@ export default function CleanStudyRoom() {
       const pc = new RTCPeerConnection(ICE_SERVERS);
 
       peersRef.current[remoteId] = pc;
-      pendingCandidatesRef.current[remoteId] = [];
+      pendingCandidatesRef.current[remoteId] =
+        pendingCandidatesRef.current[remoteId] || [];
 
-      const localStream = streamRef.current;
-
-      if (localStream) {
-        localStream.getTracks().forEach((track) => {
-          pc.addTrack(track, localStream);
+      // Add available local tracks.
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          pc.addTrack(track, streamRef.current);
         });
       }
 
@@ -270,7 +301,22 @@ export default function CleanStudyRoom() {
         let remoteStream = event.streams?.[0];
 
         if (!remoteStream) {
-          remoteStream = new MediaStream([event.track]);
+          if (!remoteStreamsRef.current[remoteId]) {
+            remoteStreamsRef.current[remoteId] =
+              new MediaStream();
+          }
+
+          remoteStream = remoteStreamsRef.current[remoteId];
+
+          if (
+            !remoteStream
+              .getTracks()
+              .some((track) => track.id === event.track.id)
+          ) {
+            remoteStream.addTrack(event.track);
+          }
+        } else {
+          remoteStreamsRef.current[remoteId] = remoteStream;
         }
 
         setParticipants((previous) => {
@@ -302,16 +348,14 @@ export default function CleanStudyRoom() {
       };
 
       pc.onconnectionstatechange = () => {
-        console.log(
-          "Peer state:",
-          remoteId,
-          pc.connectionState
-        );
+        console.log("Peer state:", remoteId, pc.connectionState);
 
         if (pc.connectionState === "connected") {
           setConnectionStatus("Video connected");
         } else if (pc.connectionState === "failed") {
           setConnectionStatus("Video connection failed");
+        } else if (pc.connectionState === "connecting") {
+          setConnectionStatus("Connecting video...");
         }
       };
 
@@ -328,52 +372,33 @@ export default function CleanStudyRoom() {
     []
   );
 
-  const flushCandidates = useCallback(async (remoteId) => {
-    const pc = peersRef.current[remoteId];
-
-    if (!pc?.remoteDescription) return;
-
-    const candidates = pendingCandidatesRef.current[remoteId] || [];
-    pendingCandidatesRef.current[remoteId] = [];
-
-    for (const candidate of candidates) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (error) {
-        console.error("Queued ICE candidate failed:", error);
-      }
-    }
-  }, []);
-
-  const addCandidate = useCallback(async (remoteId, candidateData) => {
-    if (!candidateData) return;
+  // Queue ICE candidates even when the peer connection doesn't exist yet.
+  const addCandidate = useCallback(async (remoteId, candidate) => {
+    if (!remoteId || !candidate) return;
 
     const pc = peersRef.current[remoteId];
 
-    if (!pc || pc.signalingState === "closed") return;
-
-    if (!pc.remoteDescription) {
+    if (!pc || pc.signalingState === "closed" || !pc.remoteDescription) {
       if (!pendingCandidatesRef.current[remoteId]) {
         pendingCandidatesRef.current[remoteId] = [];
       }
 
-      pendingCandidatesRef.current[remoteId].push(candidateData);
+      pendingCandidatesRef.current[remoteId].push(candidate);
       return;
     }
 
     try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidateData));
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (error) {
-      console.error("ICE candidate failed:", error);
+      console.error("ICE candidate error:", error);
     }
   }, []);
 
-  // Socket connection and signaling.
+  // Socket.IO room and WebRTC signaling.
   useEffect(() => {
     if (!roomId || !myName) return;
 
     mountedRef.current = true;
-    leavingRef.current = false;
 
     const socket = io(BACKEND_URL, {
       transports: ["websocket", "polling"],
@@ -391,29 +416,32 @@ export default function CleanStudyRoom() {
     });
 
     socket.on("connect_error", (error) => {
-      console.error("Socket error:", error.message);
+      console.error("Socket connection error:", error.message);
       setConnectionStatus("Server connection error");
     });
 
     socket.on("disconnect", () => {
-      joinedRef.current = false;
       setIsConnected(false);
       setConnectionStatus("Reconnecting...");
     });
 
-    socket.on("study-room-error", ({ message } = {}) => {
-      setMediaError(message || "Study Room error.");
+    socket.on("study-room-error", (data = {}) => {
+      setMediaError(data.message || "Study Room error.");
     });
 
-    socket.on("room-full", () => setRoomFullError(true));
+    socket.on("room-full", () => {
+      setRoomFullError(true);
+    });
 
+    // The backend sends the existing users to the new participant.
+    // Do NOT create offers here. Existing users initiate them in
+    // user-connected below, avoiding simultaneous offer collisions.
     socket.on("room-users", ({ users = [] } = {}) => {
-      joinedRef.current = true;
       setIsConnected(true);
       setConnectionStatus("Room connected");
 
       const others = users.filter(
-        (user) => user.socketId !== socket.id
+        (user) => user.socketId && user.socketId !== socket.id
       );
 
       setParticipants((previous) =>
@@ -429,45 +457,9 @@ export default function CleanStudyRoom() {
           };
         })
       );
-
-      /*
-       * Deterministic offer rule:
-       * The participant with the lexicographically smaller socket ID
-       * initiates. This reduces simultaneous-offer collisions.
-       */
-      for (const user of others) {
-        if (!user.socketId) continue;
-
-        if (socket.id.localeCompare(user.socketId) > 0) continue;
-        if (peersRef.current[user.socketId]) continue;
-
-        void (async () => {
-          try {
-            const pc = createPeerConnection(
-              user.socketId,
-              user.userName,
-              socket
-            );
-
-            makingOfferRef.current[user.socketId] = true;
-
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-
-            socket.emit("offer", {
-              target: user.socketId,
-              offer: pc.localDescription,
-              senderName: myName,
-            });
-          } catch (error) {
-            console.error("Offer creation failed:", error);
-          } finally {
-            makingOfferRef.current[user.socketId] = false;
-          }
-        })();
-      }
     });
 
+    // Existing participants initiate a connection to the new user.
     socket.on("user-connected", ({ socketId, userName } = {}) => {
       if (!socketId || socketId === socket.id) return;
 
@@ -487,11 +479,40 @@ export default function CleanStudyRoom() {
           },
         ];
       });
+
+      void (async () => {
+        try {
+          let pc = peersRef.current[socketId];
+
+          if (!pc || pc.signalingState === "closed") {
+            pc = createPeerConnection(
+              socketId,
+              userName || "Student",
+              socket
+            );
+          }
+
+          // Prevent duplicate offers for the same peer.
+          if (pc.signalingState !== "stable") return;
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socket.emit("offer", {
+            target: socketId,
+            offer: pc.localDescription,
+            senderName: myName,
+          });
+        } catch (error) {
+          console.error("Create offer failed:", error);
+        }
+      })();
     });
 
+    // The backend relays the offer as { offer, caller, callerUserName }.
     socket.on(
       "offer",
-      async ({ offer, caller, callerUserName, senderName } = {}) => {
+      async ({ offer, caller, callerUserName } = {}) => {
         if (!caller || !offer) return;
 
         try {
@@ -500,26 +521,17 @@ export default function CleanStudyRoom() {
           if (!pc || pc.signalingState === "closed") {
             pc = createPeerConnection(
               caller,
-              callerUserName || senderName || "Student",
+              callerUserName || "Student",
               socket
             );
           }
 
-          // Handle a colliding offer by recreating the peer connection.
-          if (
-            pc.signalingState !== "stable" &&
-            makingOfferRef.current[caller]
-          ) {
-            pc.ontrack = null;
-            pc.onicecandidate = null;
-            pc.close();
-            delete peersRef.current[caller];
-
-            pc = createPeerConnection(
-              caller,
-              callerUserName || senderName || "Student",
-              socket
+          if (pc.signalingState !== "stable") {
+            console.warn(
+              "Ignoring offer because peer is not stable:",
+              pc.signalingState
             );
+            return;
           }
 
           await pc.setRemoteDescription(
@@ -536,31 +548,37 @@ export default function CleanStudyRoom() {
             answer: pc.localDescription,
           });
         } catch (error) {
-          console.error("Offer handling failed:", error);
+          console.error("Handle offer failed:", error);
         }
       }
     );
 
-    socket.on(
-      "answer",
-      async ({ answer, responder } = {}) => {
-        if (!responder || !answer) return;
+    // The backend relays the answer as { answer, responder }.
+    socket.on("answer", async ({ answer, responder } = {}) => {
+      if (!responder || !answer) return;
 
-        const pc = peersRef.current[responder];
+      const pc = peersRef.current[responder];
 
-        if (!pc || pc.signalingState === "closed") return;
+      if (!pc || pc.signalingState === "closed") return;
 
-        try {
-          await pc.setRemoteDescription(
-            new RTCSessionDescription(answer)
+      try {
+        if (pc.signalingState !== "have-local-offer") {
+          console.warn(
+            "Unexpected answer state:",
+            pc.signalingState
           );
-
-          await flushCandidates(responder);
-        } catch (error) {
-          console.error("Answer handling failed:", error);
+          return;
         }
+
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(answer)
+        );
+
+        await flushCandidates(responder);
+      } catch (error) {
+        console.error("Handle answer failed:", error);
       }
-    );
+    });
 
     socket.on(
       "ice-candidate",
@@ -571,27 +589,32 @@ export default function CleanStudyRoom() {
       }
     );
 
-    socket.on("user-disconnected", ({ socketId, userName } = {}) => {
-      if (!socketId) return;
+    socket.on(
+      "user-disconnected",
+      ({ socketId, userName } = {}) => {
+        if (!socketId) return;
 
-      addSystemMessage(`${userName || "Student"} left the room.`);
+        addSystemMessage(`${userName || "Student"} left the room.`);
 
-      const pc = peersRef.current[socketId];
+        const pc = peersRef.current[socketId];
 
-      if (pc) {
-        pc.ontrack = null;
-        pc.onicecandidate = null;
-        pc.close();
-        delete peersRef.current[socketId];
+        if (pc) {
+          pc.ontrack = null;
+          pc.onicecandidate = null;
+          pc.close();
+          delete peersRef.current[socketId];
+        }
+
+        delete pendingCandidatesRef.current[socketId];
+        delete remoteStreamsRef.current[socketId];
+
+        setParticipants((previous) =>
+          previous.filter(
+            (person) => person.socketId !== socketId
+          )
+        );
       }
-
-      delete pendingCandidatesRef.current[socketId];
-      delete makingOfferRef.current[socketId];
-
-      setParticipants((previous) =>
-        previous.filter((person) => person.socketId !== socketId)
-      );
-    });
+    );
 
     socket.on("chat-message", ({ sender, text } = {}) => {
       if (!text) return;
@@ -608,6 +631,7 @@ export default function CleanStudyRoom() {
 
     return () => {
       mountedRef.current = false;
+
       socket.removeAllListeners();
       socket.disconnect();
 
@@ -619,11 +643,11 @@ export default function CleanStudyRoom() {
 
       peersRef.current = {};
       pendingCandidatesRef.current = {};
-      makingOfferRef.current = {};
+      remoteStreamsRef.current = {};
 
-      if (socketRef.current === socket) socketRef.current = null;
-
-      setParticipants([]);
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, [
     roomId,
@@ -650,7 +674,10 @@ export default function CleanStudyRoom() {
     }
 
     const next = !isMicOn;
-    tracks.forEach((track) => (track.enabled = next));
+    micOnRef.current = next;
+    tracks.forEach((track) => {
+      track.enabled = next;
+    });
     setIsMicOn(next);
   };
 
@@ -663,19 +690,14 @@ export default function CleanStudyRoom() {
     }
 
     const next = !isVideoOn;
-    tracks.forEach((track) => (track.enabled = next));
+    videoOnRef.current = next;
+    tracks.forEach((track) => {
+      track.enabled = next;
+    });
     setIsVideoOn(next);
   };
 
-  const switchCamera = () => {
-    setFacingMode((previous) =>
-      previous === "user" ? "environment" : "user"
-    );
-  };
-
   const leaveRoom = () => {
-    leavingRef.current = true;
-
     Object.values(peersRef.current).forEach((pc) => pc.close());
     peersRef.current = {};
 
@@ -700,8 +722,7 @@ export default function CleanStudyRoom() {
 
     if (!text || !socket?.connected) return;
 
-    // Backend echoes to all members, including the sender.
-    // Do not add an optimistic copy to avoid duplicate messages.
+    // Backend broadcasts the message back to the sender as well.
     socket.emit("chat-message", { roomId, text });
     setInputMsg("");
   };
@@ -727,7 +748,6 @@ export default function CleanStudyRoom() {
 
   return (
     <main className="fixed inset-0 z-[9999] flex h-[100dvh] w-screen flex-col overflow-hidden bg-slate-950 text-white">
-      {/* Study Room header */}
       <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-900 px-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
           <span
@@ -735,7 +755,6 @@ export default function CleanStudyRoom() {
               isConnected ? "bg-emerald-400" : "bg-amber-400"
             }`}
           />
-
           <div className="min-w-0">
             <p className="max-w-[48vw] truncate text-xs font-bold text-indigo-300 sm:max-w-none">
               CST HUB · {roomId}
@@ -752,10 +771,9 @@ export default function CleanStudyRoom() {
             <Users className="h-3.5 w-3.5 text-indigo-400" />
             {participants.length + 1}
           </span>
-
           <button
             type="button"
-            onClick={() => setIsChatOpen((previous) => !previous)}
+            onClick={() => setIsChatOpen((value) => !value)}
             aria-label="Toggle chat"
             className="relative rounded-xl bg-indigo-600 p-2.5 hover:bg-indigo-500"
           >
@@ -767,7 +785,6 @@ export default function CleanStudyRoom() {
         </div>
       </header>
 
-      {/* Video workspace */}
       <section className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           className={`grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-4 ${
@@ -777,30 +794,29 @@ export default function CleanStudyRoom() {
           }`}
         >
           <VideoTile
-            stream={streamRef.current}
             videoRef={myVideoRef}
             name={`${myName} (You)`}
             isLocal
             isVideoOn={isVideoOn}
             facingMode={facingMode}
             loading={mediaLoading}
+            hasStream={Boolean(streamRef.current)}
           />
 
-          {participants.map((participant) => (
+          {participants.map((person) => (
             <RemoteVideo
-              key={participant.socketId}
-              participant={participant}
+              key={person.socketId}
+              participant={person}
             />
           ))}
         </div>
 
-        {/* Mobile and desktop chat drawer */}
         {isChatOpen && (
           <button
             type="button"
             aria-label="Close chat overlay"
             onClick={() => setIsChatOpen(false)}
-            className="absolute inset-0 z-30 bg-black/50 lg:hidden"
+            className="absolute inset-0 z-30 bg-black/50"
           />
         )}
 
@@ -815,7 +831,6 @@ export default function CleanStudyRoom() {
               <MessageSquare className="h-4 w-4" />
               Study Room Chat
             </span>
-
             <button
               type="button"
               onClick={() => setIsChatOpen(false)}
@@ -878,7 +893,6 @@ export default function CleanStudyRoom() {
         </aside>
       </section>
 
-      {/* Error banner */}
       {mediaError && (
         <div className="absolute bottom-[76px] left-2 right-2 z-[10000] flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-950 p-3 text-xs text-rose-100 sm:bottom-20 sm:left-auto sm:right-4 sm:max-w-sm">
           <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
@@ -893,7 +907,6 @@ export default function CleanStudyRoom() {
         </div>
       )}
 
-      {/* Fixed footer controls */}
       <footer className="z-50 flex h-[68px] shrink-0 items-center justify-center gap-2 border-t border-white/10 bg-slate-900 px-2 pb-[env(safe-area-inset-bottom)] shadow-2xl sm:h-[76px] sm:gap-3">
         <ControlButton
           label={isMicOn ? "Mute microphone" : "Turn microphone on"}
@@ -922,7 +935,11 @@ export default function CleanStudyRoom() {
         <ControlButton
           label="Switch camera"
           active
-          onClick={switchCamera}
+          onClick={() =>
+            setFacingMode((value) =>
+              value === "user" ? "environment" : "user"
+            )
+          }
         >
           <SwitchCamera className="h-4 w-4" />
         </ControlButton>
@@ -960,13 +977,13 @@ function ControlButton({ children, label, active, onClick }) {
 }
 
 function VideoTile({
-  stream,
   videoRef,
   name,
   isLocal = false,
   isVideoOn = true,
   facingMode = "user",
   loading = false,
+  hasStream = false,
 }) {
   return (
     <div className="relative flex h-[min(48vh,360px)] min-h-[210px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-lg sm:h-[min(45vh,400px)]">
@@ -983,11 +1000,19 @@ function VideoTile({
         }`}
       />
 
-      {loading && isLocal && (
+      {loading && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-slate-950/90">
           <LoaderCircle className="h-6 w-6 animate-spin text-indigo-400" />
           <span className="text-xs text-slate-400">
             Camera starting...
+          </span>
+        </div>
+      )}
+
+      {!loading && !hasStream && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950">
+          <span className="text-xs text-slate-400">
+            Camera unavailable
           </span>
         </div>
       )}
@@ -997,14 +1022,6 @@ function VideoTile({
           <VideoOff className="h-8 w-8 text-slate-500" />
           <span className="ml-2 text-xs text-slate-400">
             Camera Off
-          </span>
-        </div>
-      )}
-
-      {!stream && !loading && isLocal && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950">
-          <span className="text-xs text-slate-400">
-            Camera unavailable
           </span>
         </div>
       )}
@@ -1025,9 +1042,7 @@ function RemoteVideo({ participant }) {
 
     if (!video || !stream) return;
 
-    if (video.srcObject !== stream) {
-      video.srcObject = stream;
-    }
+    video.srcObject = stream;
 
     video.play().catch((error) => {
       console.warn("Remote video playback failed:", error);
