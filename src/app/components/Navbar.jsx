@@ -1,4 +1,3 @@
-// ```jsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -15,11 +14,9 @@ import {
   Info,
   CalendarDays,
   Users,
-  Bell,
   LayoutDashboard,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import NotificationSetup from "./NotificationSetup";
 
 export default function Navbar() {
   const router = useRouter();
@@ -29,7 +26,7 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
-  // Load logged-in user after mounting to avoid hydration mismatch.
+  // Load logged-in user after mounting.
   useEffect(() => {
     const checkUser = () => {
       const storedUser =
@@ -85,10 +82,11 @@ export default function Navbar() {
     router.push("/Login");
   };
 
-  // Hide public navbar on dashboard pages.
+  // Hide navbar on dashboard pages and study rooms.
   if (
     pathname?.includes("Student-dashboard") ||
-    pathname?.includes("cr-dashboard")
+    pathname?.includes("cr-dashboard") ||
+    pathname?.startsWith("/study-room/")
   ) {
     return null;
   }
@@ -115,35 +113,8 @@ export default function Navbar() {
         : "border-transparent text-slate-300 hover:border-indigo-400/20 hover:bg-indigo-500/10 hover:text-white",
     ].join(" ");
 
-  const notificationButtonClass = [
-    "relative flex h-9 w-9 shrink-0 items-center justify-center",
-    "rounded-lg border border-indigo-400/30 bg-indigo-500/10",
-    "text-indigo-200 transition-colors duration-200",
-    "hover:bg-indigo-500/20 hover:text-white",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400",
-  ].join(" ");
-
-  function NotificationBell() {
-    return (
-      <button
-        type="button"
-        aria-label="Notifications"
-        title="Notifications"
-        onClick={() => {
-          window.dispatchEvent(new Event("openNotifications"));
-        }}
-        className={notificationButtonClass}
-      >
-        <Bell className="h-[18px] w-[18px]" />
-      </button>
-    );
-  }
-
   return (
     <nav className="sticky top-0 z-50 mx-2 mt-2 rounded-xl border border-slate-700/60 bg-slate-950/95 shadow-lg shadow-black/20 backdrop-blur-xl">
-      {/* Keep notification setup mounted only once. */}
-      <NotificationSetup user={user} />
-
       <div className="mx-auto max-w-7xl px-3 sm:px-5 lg:px-7">
         <div className="flex h-[60px] items-center justify-between gap-2">
           {/* BRAND LOGO */}
@@ -186,8 +157,6 @@ export default function Navbar() {
                 {name}
               </Link>
             ))}
-
-            <NotificationBell />
 
             {user && (
               <Link
@@ -286,10 +255,8 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* MOBILE ACTIONS */}
+          {/* MOBILE MENU BUTTON */}
           <div className="flex shrink-0 items-center gap-2 xl:hidden">
-            <NotificationBell />
-
             <button
               type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
