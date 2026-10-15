@@ -1,4 +1,3 @@
-// ```jsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -17,6 +16,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+
+const SLIDE_INTERVAL = 4000;
 
 const slides = [
   {
@@ -83,29 +84,52 @@ const features = [
   },
 ];
 
+const slideVariants = {
+  enter: (direction) => ({
+    x: direction > 0 ? "100%" : "-100%",
+  }),
+  center: {
+    x: 0,
+  },
+  exit: (direction) => ({
+    x: direction > 0 ? "-100%" : "100%",
+  }),
+};
+
 export default function HeroSlider() {
   const [current, setCurrent] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [isPaused, setIsPaused] = useState(false);
 
   const slide = slides[current];
+
+  const goToSlide = (nextIndex) => {
+    if (nextIndex === current) return;
+
+    setDirection(nextIndex > current ? 1 : -1);
+    setCurrent(nextIndex);
+  };
+
+  const nextSlide = () => {
+    setDirection(1);
+    setCurrent((prev) => (prev + 1) % slides.length);
+  };
+
+  const previousSlide = () => {
+    setDirection(-1);
+    setCurrent((prev) => (prev - 1 + slides.length) % slides.length);
+  };
 
   useEffect(() => {
     if (isPaused) return;
 
     const timer = setInterval(() => {
+      setDirection(1);
       setCurrent((prev) => (prev + 1) % slides.length);
-    }, 5500);
+    }, SLIDE_INTERVAL);
 
     return () => clearInterval(timer);
   }, [isPaused]);
-
-  const previousSlide = () => {
-    setCurrent((prev) => (prev - 1 + slides.length) % slides.length);
-  };
-
-  const nextSlide = () => {
-    setCurrent((prev) => (prev + 1) % slides.length);
-  };
 
   return (
     <section className="relative overflow-hidden bg-[#F7F4FC] px-3 pb-8 pt-3 sm:px-5 sm:pb-12 lg:px-8 lg:pt-6">
@@ -114,39 +138,50 @@ export default function HeroSlider() {
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
-        {/* Background image */}
-        <AnimatePresence mode="sync">
-          <motion.div
-            key={slide.image}
-            className="absolute inset-0"
-            initial={{ opacity: 0, scale: 1.035 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.85, ease: "easeInOut" }}
-          >
-            <Image
-              src={slide.image}
-              alt={slide.highlight}
-              fill
-              priority={current === 0}
-              sizes="100vw"
-              className="object-cover object-center"
-            />
-          </motion.div>
-        </AnimatePresence>
+        {/* SLIDING BACKGROUND IMAGES */}
+        <div className="absolute inset-0 overflow-hidden">
+          <AnimatePresence initial={false} custom={direction} mode="sync">
+            <motion.div
+              key={slide.image}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: {
+                  type: "tween",
+                  duration: 0.8,
+                  ease: [0.22, 1, 0.36, 1],
+                },
+              }}
+              className="absolute inset-0"
+            >
+              <Image
+                src={slide.image}
+                alt={slide.highlight}
+                fill
+                priority={current === 0}
+                sizes="100vw"
+                className="object-cover object-center"
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
 
-        {/* Solid violet overlays, no gradients */}
+        {/* DARK VIOLET OVERLAYS */}
         <div className="absolute inset-0 bg-[#211633]/75" />
         <div className="absolute inset-0 bg-[#130D20]/15" />
 
-        {/* Subtle decorative outlines */}
+        {/* DECORATIVE OUTLINES */}
         <div className="pointer-events-none absolute -right-28 -top-32 h-[420px] w-[420px] rounded-full border border-white/[0.08]" />
         <div className="pointer-events-none absolute -right-16 -top-20 h-[320px] w-[320px] rounded-full border border-white/[0.08]" />
         <div className="pointer-events-none absolute -bottom-40 -left-24 h-[340px] w-[340px] rounded-full border border-white/[0.06]" />
 
-        {/* Main content */}
+        {/* MAIN CONTENT */}
         <div className="relative z-10 flex min-h-[650px] flex-col justify-center px-5 pb-24 pt-16 sm:px-10 sm:pb-28 sm:pt-20 lg:min-h-[730px] lg:px-16 xl:px-24">
           <div className="grid items-center gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">
+            {/* LEFT TEXT */}
             <div className="max-w-3xl">
               <AnimatePresence mode="wait">
                 <motion.div
@@ -156,13 +191,11 @@ export default function HeroSlider() {
                   exit={{ opacity: 0, y: -12 }}
                   transition={{ duration: 0.4 }}
                 >
-                  {/* Eyebrow */}
                   <div className="mb-7 inline-flex items-center gap-2.5 rounded-full border border-[#D8C9FF]/20 bg-[#D8C9FF]/10 px-4 py-2.5 text-[11px] font-semibold tracking-[0.14em] text-[#E4D9FF] shadow-lg shadow-black/5 backdrop-blur-xl sm:text-xs">
                     <Sparkles className="h-4 w-4 text-[#C4A7FF]" />
                     {slide.eyebrow}
                   </div>
 
-                  {/* Heading */}
                   <h1 className="max-w-3xl text-[2.8rem] font-bold leading-[1.08] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl xl:text-[82px]">
                     {slide.title}
                     <span className="mt-1 block text-[#D8C9FF]">
@@ -174,7 +207,7 @@ export default function HeroSlider() {
                     {slide.description}
                   </p>
 
-                  {/* CTA buttons */}
+                  {/* CTA BUTTONS */}
                   <div className="mt-9 flex flex-col gap-3 min-[430px]:flex-row">
                     <Link
                       href="/Signup"
@@ -193,7 +226,7 @@ export default function HeroSlider() {
                     </Link>
                   </div>
 
-                  {/* Trust line */}
+                  {/* TRUST LINE */}
                   <div className="mt-9 flex flex-wrap items-center gap-3 text-sm text-white/65">
                     <div className="flex -space-x-2">
                       <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#39274F] bg-[#D8C9FF] text-[#382451]">
@@ -212,7 +245,7 @@ export default function HeroSlider() {
               </AnimatePresence>
             </div>
 
-            {/* Right glass panel - desktop */}
+            {/* RIGHT WORKSPACE PANEL */}
             <div className="relative hidden min-h-[390px] items-center justify-center lg:flex">
               <motion.div
                 key={`panel-${current}`}
@@ -282,7 +315,7 @@ export default function HeroSlider() {
                   </div>
                 </div>
 
-                {/* Floating lavender card */}
+                {/* FLOATING SMART LEARNING CARD */}
                 <motion.div
                   animate={{ y: [0, -7, 0] }}
                   transition={{
@@ -310,7 +343,7 @@ export default function HeroSlider() {
           </div>
         </div>
 
-        {/* Bottom slider navigation */}
+        {/* SLIDER NAVIGATION */}
         <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-between border-t border-white/10 bg-[#170F22]/50 px-5 py-4 backdrop-blur-xl sm:px-10 lg:px-16 xl:px-24">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <span className="text-sm font-semibold tabular-nums text-white">
@@ -322,7 +355,7 @@ export default function HeroSlider() {
                 <button
                   key={item.number}
                   type="button"
-                  onClick={() => setCurrent(index)}
+                  onClick={() => goToSlide(index)}
                   aria-label={`Go to slide ${index + 1}`}
                   aria-current={index === current ? "true" : undefined}
                   className={`h-1.5 rounded-full transition-all duration-300 ${
@@ -361,7 +394,7 @@ export default function HeroSlider() {
         </div>
       </div>
 
-      {/* Feature strip */}
+      {/* FEATURE STRIP */}
       <div className="mx-auto mt-5 grid max-w-[1500px] grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4 lg:mt-7">
         {features.map((feature) => {
           const Icon = feature.icon;

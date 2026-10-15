@@ -114,7 +114,8 @@ export default function Navbar() {
     ].join(" ");
 
   return (
-    <nav className="sticky top-0 z-50 mx-2 mt-2 rounded-xl border border-slate-700/60 bg-slate-950/95 shadow-lg shadow-black/20 backdrop-blur-xl">
+  <nav className="sticky top-0 z-50 mx-2 mt-2 rounded-xl border border-slate-700/60 bg-[#020617] shadow-lg shadow-black/20">
+    {/* // <nav className="sticky top-0 z-50 mx-2 mt-2 rounded-xl border border-slate-700/60 bg-slate-950/95 shadow-lg shadow-black/20 backdrop-blur-xl"> */}
       <div className="mx-auto max-w-7xl px-3 sm:px-5 lg:px-7">
         <div className="flex h-[60px] items-center justify-between gap-2">
           {/* BRAND LOGO */}
