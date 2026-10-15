@@ -1,413 +1,1108 @@
+// ```jsx
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
-import { 
-  Mic, MicOff, Video, VideoOff, PhoneOff, 
-  SwitchCamera, Send, Users, MessageSquare, ShieldAlert, X 
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  PhoneOff,
+  SwitchCamera,
+  Send,
+  Users,
+  MessageSquare,
+  ShieldAlert,
+  X,
+  LoaderCircle,
 } from "lucide-react";
 
+const BACKEND_URL = "https://csthub-backend-dw3l.onrender.com";
+
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+};
+
 export default function CleanStudyRoom() {
-  const { roomId } = useParams();
+  const params = useParams();
   const router = useRouter();
 
-  const [socket, setSocket] = useState(null);
+  const roomId = Array.isArray(params?.roomId)
+    ? params.roomId[0]
+    : params?.roomId;
+
   const [participants, setParticipants] = useState([]);
-  
+  const [messages, setMessages] = useState([]);
+  const [inputMsg, setInputMsg] = useState("");
+
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [facingMode, setFacingMode] = useState("user");
-  
-  const [messages, setMessages] = useState([]);
-  const [inputMsg, setInputMsg] = useState("");
-  const [roomFullError, setRoomFullError] = useState(false);
+
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
-  const [myName] = useState(() => {
-    if (typeof window !== "undefined") {
-      const savedUser = localStorage.getItem("userName") || localStorage.getItem("studentName");
-      if (savedUser) return savedUser;
-    }
-    return "Md Ibna Abid";
-  });
+  const [roomFullError, setRoomFullError] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(true);
+  const [mediaError, setMediaError] = useState("");
+  const [connectionStatus, setConnectionStatus] =
+    useState("Connecting...");
+  const [isConnected, setIsConnected] = useState(false);
+
+  const [myName, setMyName] = useState("Student");
 
   const myVideoRef = useRef(null);
   const streamRef = useRef(null);
+  const socketRef = useRef(null);
   const peersRef = useRef({});
+  const pendingCandidatesRef = useRef({});
+  const mountedRef = useRef(false);
+  const joinedRef = useRef(false);
+  const messageEndRef = useRef(null);
+  const makingOfferRef = useRef({});
 
-  const ICE_SERVERS = {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      {
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
-      {
-        urls: "turn:openrelay.metered.ca:443",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
-    ],
-  };
-
-  // Local Media Stream
+  // Load current student's name.
   useEffect(() => {
+    try {
+      const currentUser =
+        localStorage.getItem("currentUser") ||
+        sessionStorage.getItem("currentUser");
+
+      let parsedUser = null;
+
+      if (currentUser) {
+        parsedUser = JSON.parse(currentUser);
+      }
+
+      const savedName =
+        localStorage.getItem("userName") ||
+        localStorage.getItem("studentName") ||
+        parsedUser?.name ||
+        parsedUser?.fullName;
+
+      if (savedName) {
+        setMyName(savedName);
+      }
+    } catch (error) {
+      console.error("Unable to load student name:", error);
+    }
+  }, []);
+
+  // Keep the latest local stream attached to the local video.
+  const attachLocalStream = useCallback(() => {
+    if (myVideoRef.current && streamRef.current) {
+      myVideoRef.current.srcObject = streamRef.current;
+      myVideoRef.current.play().catch(() => {});
+    }
+  }, []);
+
+  // Get camera and microphone permission.
+  useEffect(() => {
+    let cancelled = false;
+    let currentStream = null;
+
     async function initMedia() {
+      setMediaLoading(true);
+      setMediaError("");
+
       try {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error(
+            "Camera access is unavailable. Open the site over HTTPS."
+          );
         }
 
-        const currentStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facingMode },
-          audio: true,
-        });
-        
-        streamRef.current = currentStream;
-        
-        if (myVideoRef.current) {
-          myVideoRef.current.srcObject = currentStream;
+        currentStream =
+          await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: facingMode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: true,
+          });
+
+        if (cancelled) {
+          currentStream.getTracks().forEach((track) => track.stop());
+          return;
         }
-      } catch (err) {
-        console.error("Camera permission error:", err);
+
+        streamRef.current = currentStream;
+
+        currentStream.getAudioTracks().forEach((track) => {
+          track.enabled = isMicOn;
+        });
+
+        currentStream.getVideoTracks().forEach((track) => {
+          track.enabled = isVideoOn;
+        });
+
+        attachLocalStream();
+
+        // If peer connections already exist, replace their tracks.
+        Object.values(peersRef.current).forEach((pc) => {
+          const senders = pc.getSenders();
+
+          currentStream.getTracks().forEach((track) => {
+            const sender = senders.find(
+              (item) => item.track?.kind === track.kind
+            );
+
+            if (sender) {
+              sender.replaceTrack(track).catch(console.error);
+            } else if (pc.signalingState !== "closed") {
+              pc.addTrack(track, currentStream);
+            }
+          });
+        });
+      } catch (error) {
+        console.error("Camera/microphone error:", error);
+
+        if (!cancelled) {
+          setMediaError(
+            error.name === "NotAllowedError"
+              ? "Camera/microphone permission দিন, তারপর আবার চেষ্টা করুন।"
+              : error.name === "NotFoundError"
+                ? "এই device-এ camera বা microphone পাওয়া যায়নি।"
+                : error.message ||
+                  "Camera চালু করা যায়নি। আবার চেষ্টা করুন।"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setMediaLoading(false);
+        }
       }
     }
 
     initMedia();
 
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+      cancelled = true;
+
+      if (currentStream) {
+        currentStream.getTracks().forEach((track) => track.stop());
+      }
+
+      if (streamRef.current === currentStream) {
+        streamRef.current = null;
       }
     };
+    // Camera is restarted when facingMode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facingMode]);
 
-  const createPeerConnection = (targetSocketId, remoteUserName, socketInstance) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+  // Update local video element when React mounts it.
+  useEffect(() => {
+    attachLocalStream();
+  }, [attachLocalStream, mediaLoading]);
 
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, streamRef.current);
-      });
-    }
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketInstance.emit("ice-candidate", {
-          target: targetSocketId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      const remoteStream = event.streams[0];
-      setParticipants((prev) => {
-        const existing = prev.find((p) => p.socketId === targetSocketId);
-        if (existing) {
-          return prev.map((p) => 
-            p.socketId === targetSocketId ? { ...p, stream: remoteStream, userName: remoteUserName || p.userName } : p
-          );
-        } else {
-          return [...prev, { socketId: targetSocketId, userName: remoteUserName, stream: remoteStream }];
-        }
-      });
-    };
-
-    return pc;
-  };
+  // Keep microphone and camera state in sync with their tracks.
+  useEffect(() => {
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = isMicOn;
+    });
+  }, [isMicOn]);
 
   useEffect(() => {
-    if (!roomId) return;
+    streamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = isVideoOn;
+    });
+  }, [isVideoOn]);
 
-    const backendUrl = "https://csthub-backend-dw3l.onrender.com"; 
-    const newSocket = io(backendUrl, {
-      auth: { userName: myName },
+  const addSystemMessage = useCallback((text) => {
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        sender: "System",
+        text,
+      },
+    ]);
+  }, []);
+
+  // Create one peer connection per remote participant.
+  const createPeerConnection = useCallback(
+    (remoteSocketId, remoteUserName, socketInstance) => {
+      const existing = peersRef.current[remoteSocketId];
+
+      if (existing && existing.signalingState !== "closed") {
+        return existing;
+      }
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+
+      peersRef.current[remoteSocketId] = pc;
+      pendingCandidatesRef.current[remoteSocketId] = [];
+
+      const localStream = streamRef.current;
+
+      if (localStream) {
+        localStream.getTracks().forEach((track) => {
+          pc.addTrack(track, localStream);
+        });
+      }
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && socketInstance.connected) {
+          socketInstance.emit("ice-candidate", {
+            target: remoteSocketId,
+            candidate: event.candidate,
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const remoteStream =
+          event.streams?.[0] || new MediaStream([event.track]);
+
+        setParticipants((previous) => {
+          const existingParticipant = previous.find(
+            (participant) =>
+              participant.socketId === remoteSocketId
+          );
+
+          if (existingParticipant) {
+            return previous.map((participant) =>
+              participant.socketId === remoteSocketId
+                ? {
+                    ...participant,
+                    userName:
+                      remoteUserName ||
+                      participant.userName ||
+                      "Student",
+                    stream: remoteStream,
+                  }
+                : participant
+            );
+          }
+
+          return [
+            ...previous,
+            {
+              socketId: remoteSocketId,
+              userName: remoteUserName || "Student",
+              stream: remoteStream,
+            },
+          ];
+        });
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(
+          "Peer connection:",
+          remoteSocketId,
+          pc.connectionState
+        );
+
+        if (pc.connectionState === "connected") {
+          setConnectionStatus("Connected");
+        }
+
+        if (
+          pc.connectionState === "failed" ||
+          pc.connectionState === "disconnected"
+        ) {
+          console.warn(
+            "Peer connection problem:",
+            remoteSocketId,
+            pc.connectionState
+          );
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log(
+          "ICE state:",
+          remoteSocketId,
+          pc.iceConnectionState
+        );
+      };
+
+      return pc;
+    },
+    []
+  );
+
+  // Add remote ICE candidates after remote description is available.
+  const addRemoteCandidate = useCallback(
+    async (senderId, candidateData) => {
+      const pc = peersRef.current[senderId];
+
+      if (!pc || pc.signalingState === "closed") return;
+
+      try {
+        const candidate = new RTCIceCandidate(candidateData);
+
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(candidate);
+        } else {
+          if (!pendingCandidatesRef.current[senderId]) {
+            pendingCandidatesRef.current[senderId] = [];
+          }
+
+          pendingCandidatesRef.current[senderId].push(candidate);
+        }
+      } catch (error) {
+        console.error("ICE candidate error:", error);
+      }
+    },
+    []
+  );
+
+  const flushPendingCandidates = useCallback(async (socketId) => {
+    const pc = peersRef.current[socketId];
+    const pending = pendingCandidatesRef.current[socketId] || [];
+
+    if (!pc?.remoteDescription) return;
+
+    pendingCandidatesRef.current[socketId] = [];
+
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (error) {
+        console.error("Pending ICE candidate error:", error);
+      }
+    }
+  }, []);
+
+  // Socket.IO room connection and WebRTC signaling.
+  useEffect(() => {
+    if (!roomId || !myName) return;
+
+    mountedRef.current = true;
+    joinedRef.current = false;
+
+    const socketInstance = io(BACKEND_URL, {
       transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 8,
+      reconnectionDelay: 1000,
+      auth: { userName: myName },
     });
 
-    setSocket(newSocket);
+    socketRef.current = socketInstance;
 
-    newSocket.on("connect", () => {
-      newSocket.emit("join-study-room", roomId);
+    socketInstance.on("connect", () => {
+      console.log("Socket connected:", socketInstance.id);
+      setConnectionStatus("Joining room...");
+
+      socketInstance.emit("join-study-room", roomId);
     });
 
-    newSocket.on("room-full", () => {
+    socketInstance.on("connect_error", (error) => {
+      console.error("Socket connection error:", error.message);
+      setConnectionStatus("Connection error");
+    });
+
+    socketInstance.on("disconnect", () => {
+      setConnectionStatus("Reconnecting...");
+      setIsConnected(false);
+      joinedRef.current = false;
+    });
+
+    socketInstance.on("room-full", () => {
       setRoomFullError(true);
     });
 
-    newSocket.on("room-users", async ({ users }) => {
-      const otherUsers = users.filter((u) => u.socketId !== newSocket.id);
-      
-      setParticipants((prev) => {
-        otherUsers.forEach(async (user) => {
-          if (!peersRef.current[user.socketId]) {
-            const pc = createPeerConnection(user.socketId, user.userName, newSocket);
-            peersRef.current[user.socketId] = pc;
+    // Support backends that emit a room member list.
+    socketInstance.on("room-users", async (payload = {}) => {
+      const users = Array.isArray(payload.users)
+        ? payload.users
+        : [];
 
-            try {
-              const offer = await pc.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-              });
-              await pc.setLocalDescription(offer);
-              newSocket.emit("offer", { target: user.socketId, offer, senderName: myName });
-            } catch (err) {
-              console.error("Error creating offer:", err);
-            }
-          }
-        });
+      joinedRef.current = true;
+      setIsConnected(true);
+      setConnectionStatus("Connected");
 
-        return otherUsers.map((u) => {
-          const existing = prev.find((p) => p.socketId === u.socketId);
+      const otherUsers = users.filter(
+        (user) => user.socketId !== socketInstance.id
+      );
+
+      setParticipants((previous) =>
+        otherUsers.map((user) => {
+          const existing = previous.find(
+            (participant) =>
+              participant.socketId === user.socketId
+          );
+
           return {
-            socketId: u.socketId,
-            userName: u.userName,
-            stream: existing ? existing.stream : null,
+            socketId: user.socketId,
+            userName: user.userName || "Student",
+            stream: existing?.stream || null,
           };
+        })
+      );
+
+      // Existing members initiate offers to the newly joined member.
+      for (const user of otherUsers) {
+        if (!user.socketId || peersRef.current[user.socketId]) {
+          continue;
+        }
+
+        try {
+          const pc = createPeerConnection(
+            user.socketId,
+            user.userName,
+            socketInstance
+          );
+
+          makingOfferRef.current[user.socketId] = true;
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socketInstance.emit("offer", {
+            target: user.socketId,
+            offer: pc.localDescription,
+            senderName: myName,
+          });
+        } catch (error) {
+          console.error("Create offer error:", error);
+        } finally {
+          makingOfferRef.current[user.socketId] = false;
+        }
+      }
+    });
+
+    // This event is emitted when another participant joins.
+    socketInstance.on(
+      "user-connected",
+      async ({ socketId, userName } = {}) => {
+        if (!socketId || socketId === socketInstance.id) return;
+
+        addSystemMessage(`${userName || "Student"} joined the room.`);
+
+        setParticipants((previous) => {
+          if (
+            previous.some(
+              (participant) => participant.socketId === socketId
+            )
+          ) {
+            return previous;
+          }
+
+          return [
+            ...previous,
+            {
+              socketId,
+              userName: userName || "Student",
+              stream: null,
+            },
+          ];
         });
-      });
-    });
 
-    newSocket.on("user-connected", ({ socketId, userName }) => {
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Keu ekjon"} room-e eseche.` }]);
-    });
-
-    newSocket.on("offer", async ({ offer, caller, callerUserName }) => {
-      let pc = peersRef.current[caller];
-      if (!pc) {
-        pc = createPeerConnection(caller, callerUserName, newSocket);
-        peersRef.current[caller] = pc;
+        /*
+         * The backend must provide a consistent signaling flow.
+         * If the backend also sends room-users, that handler creates
+         * offers to existing participants.
+         */
       }
+    );
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      newSocket.emit("answer", { target: caller, answer });
-    });
+    socketInstance.on(
+      "offer",
+      async ({ offer, caller, sender, senderName, callerUserName } = {}) => {
+        const remoteSocketId = caller || sender;
 
-    newSocket.on("answer", async ({ answer, responder }) => {
-      const pc = peersRef.current[responder];
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        if (!remoteSocketId || !offer) {
+          console.warn("Invalid offer payload received.");
+          return;
+        }
+
+        try {
+          const pc = createPeerConnection(
+            remoteSocketId,
+            senderName || callerUserName || "Student",
+            socketInstance
+          );
+
+          await pc.setRemoteDescription(
+            new RTCSessionDescription(offer)
+          );
+
+          await flushPendingCandidates(remoteSocketId);
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          socketInstance.emit("answer", {
+            target: remoteSocketId,
+            answer: pc.localDescription,
+          });
+        } catch (error) {
+          console.error("Offer/answer negotiation failed:", error);
+        }
       }
-    });
+    );
 
-    newSocket.on("ice-candidate", async ({ candidate, sender }) => {
-      const pc = peersRef.current[sender];
-      if (pc && candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    socketInstance.on(
+      "answer",
+      async ({ answer, responder, sender, caller } = {}) => {
+        const remoteSocketId = responder || sender || caller;
+
+        if (!remoteSocketId || !answer) {
+          console.warn("Invalid answer payload received.");
+          return;
+        }
+
+        const pc = peersRef.current[remoteSocketId];
+
+        if (!pc || pc.signalingState === "closed") return;
+
+        try {
+          await pc.setRemoteDescription(
+            new RTCSessionDescription(answer)
+          );
+
+          await flushPendingCandidates(remoteSocketId);
+        } catch (error) {
+          console.error("Set remote answer failed:", error);
+        }
       }
-    });
+    );
 
-    newSocket.on("user-disconnected", ({ socketId, userName }) => {
-      setMessages((prev) => [...prev, { sender: "System", text: `${userName || "Keu ekjon"} chole geche.` }]);
+    socketInstance.on(
+      "ice-candidate",
+      ({ candidate, sender, caller } = {}) => {
+        const remoteSocketId = sender || caller;
 
-      if (peersRef.current[socketId]) {
-        peersRef.current[socketId].close();
-        delete peersRef.current[socketId];
+        if (remoteSocketId && candidate) {
+          addRemoteCandidate(remoteSocketId, candidate);
+        }
       }
+    );
 
-      setParticipants((prev) => prev.filter((p) => p.socketId !== socketId));
-    });
+    socketInstance.on(
+      "user-disconnected",
+      ({ socketId, userName } = {}) => {
+        if (!socketId) return;
 
-    newSocket.on("chat-message", ({ sender, text }) => {
-      setMessages((prev) => [...prev, { sender, text }]);
+        addSystemMessage(
+          `${userName || "Student"} left the room.`
+        );
+
+        const pc = peersRef.current[socketId];
+
+        if (pc) {
+          pc.ontrack = null;
+          pc.onicecandidate = null;
+          pc.close();
+          delete peersRef.current[socketId];
+        }
+
+        delete pendingCandidatesRef.current[socketId];
+        delete makingOfferRef.current[socketId];
+
+        setParticipants((previous) =>
+          previous.filter(
+            (participant) => participant.socketId !== socketId
+          )
+        );
+      }
+    );
+
+    socketInstance.on("chat-message", (payload = {}) => {
+      const sender = payload.sender || payload.userName || "Student";
+      const text = payload.text || payload.message || "";
+
+      if (!text) return;
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          sender,
+          text,
+        },
+      ]);
     });
 
     return () => {
-      newSocket.disconnect();
-      Object.values(peersRef.current).forEach((pc) => pc.close());
+      mountedRef.current = false;
+
+      socketInstance.removeAllListeners();
+      socketInstance.disconnect();
+
+      Object.values(peersRef.current).forEach((pc) => {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.close();
+      });
+
+      peersRef.current = {};
+      pendingCandidatesRef.current = {};
+      makingOfferRef.current = {};
+
+      if (socketRef.current === socketInstance) {
+        socketRef.current = null;
+      }
+
+      setParticipants([]);
     };
-  }, [roomId, myName]);
+  }, [
+    roomId,
+    myName,
+    createPeerConnection,
+    addRemoteCandidate,
+    flushPendingCandidates,
+    addSystemMessage,
+  ]);
+
+  // Scroll chat to the latest message.
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages]);
 
   const toggleMic = () => {
-    if (streamRef.current) {
-      const track = streamRef.current.getAudioTracks()[0];
-      if (track) {
-        track.enabled = !track.enabled;
-        setIsMicOn(track.enabled);
-      }
+    const tracks = streamRef.current?.getAudioTracks() || [];
+
+    if (!tracks.length) {
+      setMediaError("Microphone পাওয়া যায়নি। Permission পরীক্ষা করুন।");
+      return;
     }
+
+    const nextState = !isMicOn;
+
+    tracks.forEach((track) => {
+      track.enabled = nextState;
+    });
+
+    setIsMicOn(nextState);
   };
 
   const toggleVideo = () => {
-    if (streamRef.current) {
-      const track = streamRef.current.getVideoTracks()[0];
-      if (track) {
-        track.enabled = !track.enabled;
-        setIsVideoOn(track.enabled);
-      }
+    const tracks = streamRef.current?.getVideoTracks() || [];
+
+    if (!tracks.length) {
+      setMediaError("Camera পাওয়া যায়নি। Permission পরীক্ষা করুন।");
+      return;
     }
+
+    const nextState = !isVideoOn;
+
+    tracks.forEach((track) => {
+      track.enabled = nextState;
+    });
+
+    setIsVideoOn(nextState);
   };
 
   const switchCamera = () => {
-    setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
+    setFacingMode((previous) =>
+      previous === "user" ? "environment" : "user"
+    );
   };
 
   const leaveRoom = () => {
+    Object.values(peersRef.current).forEach((pc) => pc.close());
+    peersRef.current = {};
+
+    if (socketRef.current) {
+      socketRef.current.emit("leave-study-room", roomId);
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
-    if (socket) socket.disconnect();
+
     router.push("/");
   };
 
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!inputMsg.trim()) return;
-    socket.emit("chat-message", { roomId, text: inputMsg });
-    setMessages((prev) => [...prev, { sender: myName, text: inputMsg }]);
+  const sendMessage = (event) => {
+    event.preventDefault();
+
+    const text = inputMsg.trim();
+    const socketInstance = socketRef.current;
+
+    if (!text || !socketInstance?.connected) return;
+
+    socketInstance.emit("chat-message", {
+      roomId,
+      sender: myName,
+      text,
+    });
+
+    // Optimistic local message. Avoid duplicates if backend echoes to sender.
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        sender: myName,
+        text,
+      },
+    ]);
+
     setInputMsg("");
   };
 
   if (roomFullError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-white p-6 text-center">
-        <ShieldAlert className="w-16 h-16 text-rose-500 mb-4" />
-        <h2 className="text-xl font-bold mb-2">Room-ti purno</h2>
-        <button onClick={() => router.push("/")} className="px-6 py-2.5 bg-indigo-600 rounded-xl text-sm font-semibold">Home-e jan</button>
-      </div>
+      <main className="flex min-h-[100dvh] flex-col items-center justify-center bg-slate-950 p-6 text-center text-white">
+        <ShieldAlert className="mb-4 h-16 w-16 text-rose-500" />
+        <h2 className="mb-2 text-xl font-bold">Room is full</h2>
+        <p className="mb-5 text-sm text-slate-400">
+          এই Study Room-এ আর participant যোগ করা যাচ্ছে না।
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold hover:bg-indigo-500"
+        >
+          Go Home
+        </button>
+      </main>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col h-[100dvh] w-screen overflow-hidden">
+    <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-slate-950 text-white">
       {/* Header */}
-      <header className="h-14 bg-slate-900 border-b border-white/10 px-4 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span className="text-xs text-indigo-300 font-semibold">Room: {roomId}</span>
+      <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-900 px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+              isConnected
+                ? "animate-pulse bg-emerald-500"
+                : "bg-amber-400"
+            }`}
+          />
+
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold text-indigo-300">
+              Room: {roomId}
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {connectionStatus}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs bg-white/5 border border-white/10 px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-slate-300">
-            <Users className="w-3.5 h-3.5 text-indigo-400" /> {participants.length + 1} jon
+
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-slate-300">
+            <Users className="h-3.5 w-3.5 text-indigo-400" />
+            {participants.length + 1}
           </span>
-          <button 
-            onClick={() => setIsChatOpen(!isChatOpen)} 
-            className="p-2 bg-indigo-600 border border-indigo-500 text-white rounded-xl relative hover:bg-indigo-500 transition-all"
+
+          <button
+            type="button"
+            onClick={() => setIsChatOpen((previous) => !previous)}
+            aria-label="Toggle chat"
+            className="relative rounded-lg border border-indigo-500 bg-indigo-600 p-2 text-white transition hover:bg-indigo-500"
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="h-4 w-4" />
+            {messages.length > 0 && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-400 ring-2 ring-slate-900" />
+            )}
           </button>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex relative overflow-hidden pb-16">
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 p-3 gap-3 overflow-y-auto content-start">
-          <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] h-48 sm:h-56 overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
-            <video 
-              ref={myVideoRef} 
-              autoPlay 
-              playsInline 
-              muted 
-              className={`absolute inset-0 w-full h-full object-cover ${facingMode === "user" ? "-scale-x-100" : ""}`} 
-            />
-            {!isVideoOn && (
-              <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center">
-                <span className="text-xs text-slate-400">Camera Off</span>
-              </div>
-            )}
-            <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white z-10">
-              {myName} (Apni)
-            </span>
-          </div>
+      {/* Workspace */}
+      <section className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div
+          className={`grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3 ${
+            participants.length === 0
+              ? "grid-cols-1"
+              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          }`}
+        >
+          {/* Local video */}
+          <VideoTile
+            stream={streamRef.current}
+            videoRef={myVideoRef}
+            name={`${myName} (You)`}
+            isLocal
+            isVideoOn={isVideoOn}
+            facingMode={facingMode}
+            loading={mediaLoading}
+          />
 
-          {participants.map((p) => (
-            <RemoteVideo key={p.socketId} participant={p} />
+          {/* Remote participants */}
+          {participants.map((participant) => (
+            <RemoteVideo
+              key={participant.socketId}
+              participant={participant}
+            />
           ))}
         </div>
 
-        {/* Chat Drawer */}
-        <div className={`fixed lg:absolute right-0 inset-y-0 z-50 w-full sm:w-80 bg-slate-900/95 lg:bg-slate-900/90 border-l border-white/10 flex flex-col backdrop-blur-2xl transition-transform duration-300 ${
-          isChatOpen ? "translate-x-0 shadow-2xl" : "translate-x-full"
-        }`}>
-          <div className="h-14 px-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
-            <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-              <MessageSquare className="w-4 h-4" /> Study Room Chat
+        {/* Chat drawer */}
+        <aside
+          className={`fixed inset-y-14 right-0 z-50 flex w-full flex-col border-l border-white/10 bg-slate-900 shadow-2xl transition-transform duration-300 sm:w-80 lg:absolute lg:inset-y-0 lg:z-30 lg:bg-slate-900/95 ${
+            isChatOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+          aria-hidden={!isChatOpen}
+        >
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-4">
+            <span className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+              <MessageSquare className="h-4 w-4" />
+              Study Room Chat
             </span>
-            <button onClick={() => setIsChatOpen(false)} className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-white/10">
-              <X className="w-4 h-4" />
+
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(false)}
+              aria-label="Close chat"
+              className="rounded-lg bg-white/10 p-1.5 text-slate-400 hover:text-white"
+            >
+              <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex-1 p-3 overflow-y-auto space-y-2 text-xs">
-            {messages.map((m, idx) => (
-              <div key={idx} className={`p-2.5 rounded-xl border ${
-                m.sender === "System" ? "bg-amber-500/10 border-amber-500/20 text-amber-300 text-center text-[10px]" : "bg-white/5 border-white/10"
-              }`}>
-                {m.sender !== "System" && <span className="font-bold text-indigo-400 block mb-0.5">{m.sender}</span>}
-                <p className="text-slate-200 break-words">{m.text}</p>
+          <div className="flex-1 space-y-2 overflow-y-auto p-3 text-xs">
+            {messages.length === 0 && (
+              <p className="py-6 text-center text-slate-500">
+                Conversation শুরু করুন।
+              </p>
+            )}
+
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`break-words rounded-xl border p-2.5 ${
+                  message.sender === "System"
+                    ? "border-amber-500/20 bg-amber-500/10 text-center text-[10px] text-amber-300"
+                    : "border-white/10 bg-white/5"
+                }`}
+              >
+                {message.sender !== "System" && (
+                  <span className="mb-0.5 block font-bold text-indigo-400">
+                    {message.sender}
+                  </span>
+                )}
+                <p className="whitespace-pre-wrap text-slate-200">
+                  {message.text}
+                </p>
               </div>
             ))}
+
+            <div ref={messageEndRef} />
           </div>
 
-          <form onSubmit={sendMessage} className="p-3 border-t border-white/10 flex gap-2 bg-slate-950 shrink-0 mb-14 lg:mb-0">
-            <input 
-              type="text" 
-              value={inputMsg} 
-              onChange={(e) => setInputMsg(e.target.value)} 
-              placeholder="Message likhun..." 
-              className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+          <form
+            onSubmit={sendMessage}
+            className="flex shrink-0 gap-2 border-t border-white/10 bg-slate-950 p-3"
+          >
+            <input
+              type="text"
+              value={inputMsg}
+              onChange={(event) => setInputMsg(event.target.value)}
+              placeholder="Write a message..."
+              aria-label="Chat message"
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-xs text-white outline-none focus:border-indigo-500"
             />
-            <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 rounded-xl text-white flex items-center justify-center shadow-md">
-              <Send className="w-4 h-4" />
+
+            <button
+              type="submit"
+              disabled={!inputMsg.trim() || !isConnected}
+              aria-label="Send message"
+              className="flex items-center justify-center rounded-xl bg-indigo-600 px-3 text-white shadow-md transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
             </button>
           </form>
-        </div>
-      </div>
+        </aside>
+      </section>
 
-      {/* Footer Controls */}
-      <footer className="h-16 bg-slate-900/95 border-t border-white/10 fixed bottom-0 left-0 right-0 flex items-center justify-center gap-3 z-40 shadow-2xl backdrop-blur-lg">
-        <button onClick={toggleMic} className={`p-3 rounded-2xl border ${isMicOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400 border-rose-500/30"}`}>
-          {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-        </button>
-        <button onClick={toggleVideo} className={`p-3 rounded-2xl border ${isVideoOn ? "bg-white/10 text-white" : "bg-rose-500/20 text-rose-400 border-rose-500/30"}`}>
-          {isVideoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-        </button>
-        <button onClick={switchCamera} className="p-3 rounded-2xl bg-white/10 border border-white/10 text-slate-300">
-          <SwitchCamera className="w-4 h-4" />
-        </button>
-        <button onClick={leaveRoom} className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-lg">
-          <PhoneOff className="w-4 h-4" /> Kol Katun
+      {/* Media error banner */}
+      {mediaError && (
+        <div className="absolute bottom-[76px] left-3 right-3 z-[60] flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-950/95 p-3 text-xs text-rose-200 shadow-xl sm:left-auto sm:right-4 sm:max-w-sm">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+          <p className="flex-1">{mediaError}</p>
+          <button
+            type="button"
+            onClick={() => setMediaError("")}
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Footer controls */}
+      <footer className="z-40 flex h-16 shrink-0 items-center justify-center gap-2 border-t border-white/10 bg-slate-900/95 px-2 shadow-2xl backdrop-blur-lg sm:gap-3">
+        <ControlButton
+          label={isMicOn ? "Mute microphone" : "Turn microphone on"}
+          active={isMicOn}
+          onClick={toggleMic}
+        >
+          {isMicOn ? (
+            <Mic className="h-4 w-4" />
+          ) : (
+            <MicOff className="h-4 w-4" />
+          )}
+        </ControlButton>
+
+        <ControlButton
+          label={isVideoOn ? "Turn camera off" : "Turn camera on"}
+          active={isVideoOn}
+          onClick={toggleVideo}
+        >
+          {isVideoOn ? (
+            <Video className="h-4 w-4" />
+          ) : (
+            <VideoOff className="h-4 w-4" />
+          )}
+        </ControlButton>
+
+        <ControlButton
+          label="Switch camera"
+          active
+          onClick={switchCamera}
+        >
+          <SwitchCamera className="h-4 w-4" />
+        </ControlButton>
+
+        <button
+          type="button"
+          onClick={leaveRoom}
+          className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3 py-3 text-xs font-bold text-white shadow-lg transition hover:bg-rose-500 sm:px-4"
+        >
+          <PhoneOff className="h-4 w-4" />
+          <span className="hidden sm:inline">Leave Room</span>
+          <span className="sm:hidden">Leave</span>
         </button>
       </footer>
+    </main>
+  );
+}
+
+function ControlButton({ children, label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition ${
+        active
+          ? "border-white/10 bg-white/10 text-white hover:bg-white/15"
+          : "border-rose-500/30 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function VideoTile({
+  stream,
+  videoRef,
+  name,
+  isLocal = false,
+  isVideoOn = true,
+  facingMode = "user",
+  loading = false,
+}) {
+  return (
+    <div className="relative flex h-[220px] min-h-[200px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-lg sm:h-[280px] lg:h-[320px]">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal}
+        onLoadedMetadata={(event) => {
+          event.currentTarget.play().catch(() => {});
+        }}
+        className={`absolute inset-0 h-full w-full object-cover ${
+          isLocal && facingMode === "user" ? "-scale-x-100" : ""
+        }`}
+      />
+
+      {loading && isLocal && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-slate-950/80">
+          <LoaderCircle className="h-6 w-6 animate-spin text-indigo-400" />
+          <span className="text-xs text-slate-400">
+            Camera starting...
+          </span>
+        </div>
+      )}
+
+      {isLocal && !isVideoOn && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/95">
+          <VideoOff className="h-8 w-8 text-slate-500" />
+          <span className="ml-2 text-xs text-slate-400">
+            Camera Off
+          </span>
+        </div>
+      )}
+
+      {!stream && !loading && isLocal && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950">
+          <span className="text-xs text-slate-400">
+            Camera unavailable
+          </span>
+        </div>
+      )}
+
+      <span className="absolute left-2 top-2 z-20 max-w-[85%] truncate rounded-lg bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
+        {name}
+      </span>
     </div>
   );
 }
 
-// Fixed Remote Video Component
 function RemoteVideo({ participant }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
-    const videoElem = videoRef.current;
-    if (videoElem && participant.stream) {
-      videoElem.srcObject = participant.stream;
-      
-      videoElem.play().catch((err) => {
-        console.log("Autoplay error caught:", err);
-      });
+    const videoElement = videoRef.current;
+
+    if (!videoElement || !participant.stream) return;
+
+    if (videoElement.srcObject !== participant.stream) {
+      videoElement.srcObject = participant.stream;
     }
+
+    videoElement.play().catch((error) => {
+      console.warn("Remote video autoplay blocked:", error);
+    });
+
+    return () => {
+      if (videoElement.srcObject === participant.stream) {
+        videoElement.srcObject = null;
+      }
+    };
   }, [participant.stream]);
 
   return (
-    <div className="bg-slate-900/80 rounded-2xl relative min-h-[200px] h-48 sm:h-56 overflow-hidden flex items-center justify-center border border-white/10 shadow-lg">
-      <video 
-        ref={videoRef} 
-        autoPlay 
-        playsInline 
-        className="absolute inset-0 w-full h-full object-cover" 
+    <div className="relative flex h-[220px] min-h-[200px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-lg sm:h-[280px] lg:h-[320px]">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        onLoadedMetadata={(event) => {
+          event.currentTarget.play().catch(() => {});
+        }}
+        className="absolute inset-0 h-full w-full object-cover"
       />
+
       {!participant.stream && (
-        <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center">
-          <span className="text-xs text-slate-400 animate-pulse">Video connect hocche...</span>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-slate-950/90">
+          <LoaderCircle className="h-5 w-5 animate-spin text-indigo-400" />
+          <span className="text-xs text-slate-400">
+            Waiting for video...
+          </span>
         </div>
       )}
-      <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] font-medium px-2 py-1 rounded-lg text-white z-10">
+
+      <span className="absolute left-2 top-2 z-20 max-w-[85%] truncate rounded-lg bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md">
         {participant.userName || "Student"}
       </span>
     </div>
